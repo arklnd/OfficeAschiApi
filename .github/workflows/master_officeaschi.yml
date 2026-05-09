@@ -43,14 +43,14 @@ jobs:
       - name: dotnet publish
         run: dotnet publish OfficeAschiApi.csproj -c Release -o "${{env.DOTNET_ROOT}}/myapp"
 
-      - name: Copy Angular build to publish wwwroot
-        run: |
-          Copy-Item -Path "ClientApp/dist/office-aschi/browser/*" -Destination "${{env.DOTNET_ROOT}}/myapp/wwwroot" -Recurse -Force
-        shell: pwsh
+      # - name: Copy Angular build to publish wwwroot
+      #   run: |
+      #     Copy-Item -Path "ClientApp/dist/office-aschi/browser/*" -Destination "${{env.DOTNET_ROOT}}/myapp/wwwroot" -Recurse -Force
+      #   shell: pwsh
 
-      - name: List publish output
-        run: Get-ChildItem -Path "${{env.DOTNET_ROOT}}/myapp/wwwroot" -Recurse | Select-Object -First 20
-        shell: pwsh
+      # - name: List publish output
+      #   run: Get-ChildItem -Path "${{env.DOTNET_ROOT}}/myapp/wwwroot" -Recurse | Select-Object -First 20
+      #   shell: pwsh
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
