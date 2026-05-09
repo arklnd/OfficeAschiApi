@@ -88,14 +88,4 @@ public class TeamsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = team.Id },
             new TeamResponse(team.Id, team.Name, true));
     }
-
-    /// <summary>
-    /// Generate a new TOTP secret (helper endpoint for clients)
-    /// </summary>
-    [HttpGet("generate-secret")]
-    public ActionResult<object> GenerateSecret()
-    {
-        var secret = _totpService.GenerateSecret();
-        return Ok(new { secretKey = secret, message = "Add this to your authenticator app, then use the code when creating a team or joining" });
-    }
 }

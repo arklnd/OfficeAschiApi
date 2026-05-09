@@ -62,4 +62,32 @@ public class SeatsController : ControllerBase
         return CreatedAtAction(nameof(List), new { teamId },
             new SeatResponse(seat.Id, seat.Label, seat.TeamId));
     }
+
+    /// <summary>
+    /// Delete a seat from the team (manager TOTP required).
+    /// Fails if the seat has any confirmed bookings.
+    /// Authorization: TOTP manager:{teamId}:{code}
+    /// </summary>
+    [HttpDelete("{seatId}")]
+    [TotpAuth]
+    public async Task<ActionResult> Delete(int teamId, int seatId)
+    {
+        var authId = (int)HttpContext.Items["TotpEntityId"]!;
+        var authType = (string)HttpContext.Items["TotpEntityType"]!;
+        if (authType != "manager" || authId != teamId)
+            return Forbid();
+
+        var seat = await _db.Seats.FirstOrDefaultAsync(s => s.Id == seatId && s.TeamId == teamId);
+        if (seat == null)
+            return NotFound(new { error = "Seat not found in this team" });
+
+        var hasBookings = await _db.Bookings.AnyAsync(b => b.SeatId == seatId);
+        if (hasBookings)
+            return BadRequest(new { error = "Cannot delete seat with existing bookings. Cancel all bookings first." });
+
+        _db.Seats.Remove(seat);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "Seat deleted" });
+    }
 }
