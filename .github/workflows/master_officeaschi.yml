@@ -11,7 +11,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, deploy-az]
     permissions:
       contents: read #This is required for actions/checkout
 
@@ -50,7 +50,7 @@ jobs:
           path: ${{env.DOTNET_ROOT}}/myapp
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, deploy-az]
     needs: build
     permissions:
       id-token: write #This is required for requesting the JWT
