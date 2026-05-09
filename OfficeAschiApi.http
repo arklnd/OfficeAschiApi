@@ -1,0 +1,6 @@
+@OfficeAschiApi_HostAddress = http://localhost:5079
+
+GET {{OfficeAschiApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
