@@ -54,19 +54,26 @@ public class TeamsController : ControllerBase
     }
 
     /// <summary>
-    /// Create a new team (public - TOTP setup is a separate step)
+    /// Create a new team with TOTP setup (atomic).
+    /// Client provides a secret key + TOTP code; if valid, both team and TOTP are created together.
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<TeamResponse>> Create([FromBody] CreateTeamRequest request)
     {
-        var team = new Team();
+        // Validate TOTP first — fail fast before creating anything
+        if (string.IsNullOrWhiteSpace(request.SecretKey) || string.IsNullOrWhiteSpace(request.TotpCode))
+            return BadRequest(new { error = "SecretKey and TotpCode are required for team creation" });
+
+        if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
+            return BadRequest(new { error = "TOTP code does not match the secret key. Make sure your authenticator is synced." });
+
+        if (!string.IsNullOrWhiteSpace(request.Name) && await _db.Teams.AnyAsync(t => t.Name == request.Name))
+            return Conflict(new { error = "Team name already taken" });
+
+        var team = new Team { ManagerTotpSecret = request.SecretKey };
 
         if (!string.IsNullOrWhiteSpace(request.Name))
-        {
-            if (await _db.Teams.AnyAsync(t => t.Name == request.Name))
-                return Conflict(new { error = "Team name already taken" });
             team.Name = request.Name;
-        }
 
         _db.Teams.Add(team);
         await _db.SaveChangesAsync();
@@ -79,31 +86,7 @@ public class TeamsController : ControllerBase
         }
 
         return CreatedAtAction(nameof(GetById), new { id = team.Id },
-            new TeamResponse(team.Id, team.Name, false));
-    }
-
-    /// <summary>
-    /// Setup TOTP for the team manager.
-    /// Client provides a secret key and a TOTP code generated from that secret.
-    /// If the code validates against the secret, we store the secret.
-    /// </summary>
-    [HttpPost("{id}/setup-totp")]
-    public async Task<ActionResult<TotpSetupResponse>> SetupTotp(int id, [FromBody] TotpSetupRequest request)
-    {
-        var team = await _db.Teams.FindAsync(id);
-        if (team == null) return NotFound(new { error = "Team not found" });
-
-        if (team.ManagerTotpSecret != null)
-            return BadRequest(new { error = "TOTP already set up for this team" });
-
-        // Validate the provided code against the provided secret
-        if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
-            return BadRequest(new TotpSetupResponse(false, "TOTP code does not match the secret key. Make sure your authenticator is synced."));
-
-        team.ManagerTotpSecret = request.SecretKey;
-        await _db.SaveChangesAsync();
-
-        return Ok(new TotpSetupResponse(true, "TOTP setup successful for team manager"));
+            new TeamResponse(team.Id, team.Name, true));
     }
 
     /// <summary>
@@ -113,6 +96,6 @@ public class TeamsController : ControllerBase
     public ActionResult<object> GenerateSecret()
     {
         var secret = _totpService.GenerateSecret();
-        return Ok(new { secretKey = secret, message = "Add this to your authenticator app, then call setup-totp with the code" });
+        return Ok(new { secretKey = secret, message = "Add this to your authenticator app, then use the code when creating a team or joining" });
     }
 }

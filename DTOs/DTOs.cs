@@ -1,19 +1,15 @@
 namespace OfficeAschiApi.DTOs;
 
 // --- Team ---
-public record CreateTeamRequest(string? Name);
+public record CreateTeamRequest(string? Name, string SecretKey, string TotpCode);
 public record TeamResponse(int Id, string Name, bool HasTotpSetup);
-
-// --- TOTP Setup ---
-public record TotpSetupRequest(string SecretKey, string TotpCode);
-public record TotpSetupResponse(bool Success, string Message);
 
 // --- Seat ---
 public record AddSeatRequest(string Label);
 public record SeatResponse(int Id, string Label, int TeamId);
 
 // --- Reportee ---
-public record JoinTeamRequest(string FriendlyName);
+public record JoinTeamRequest(string FriendlyName, string SecretKey, string TotpCode);
 public record ReporteeResponse(int Id, string FriendlyName, int TeamId, bool IsApproved, bool HasTotpSetup);
 
 // --- Booking ---

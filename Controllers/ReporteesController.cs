@@ -39,11 +39,19 @@ public class ReporteesController : ControllerBase
     }
 
     /// <summary>
-    /// Join a team as a reportee (public - no auth needed to request joining)
+    /// Join a team as a reportee with TOTP setup (atomic).
+    /// Client provides friendly name + secret key + TOTP code. If code validates, both reportee and TOTP are created together.
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<ReporteeResponse>> Join(int teamId, [FromBody] JoinTeamRequest request)
     {
+        // Validate TOTP first — fail fast
+        if (string.IsNullOrWhiteSpace(request.SecretKey) || string.IsNullOrWhiteSpace(request.TotpCode))
+            return BadRequest(new { error = "SecretKey and TotpCode are required to join a team" });
+
+        if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
+            return BadRequest(new { error = "TOTP code does not match the secret key. Make sure your authenticator is synced." });
+
         if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
             return NotFound(new { error = "Team not found" });
 
@@ -57,36 +65,15 @@ public class ReporteesController : ControllerBase
         {
             TeamId = teamId,
             FriendlyName = request.FriendlyName,
-            IsApproved = false
+            IsApproved = false,
+            TotpSecret = request.SecretKey
         };
 
         _db.Reportees.Add(reportee);
         await _db.SaveChangesAsync();
 
         return CreatedAtAction(nameof(List), new { teamId },
-            new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, false, false));
-    }
-
-    /// <summary>
-    /// Setup TOTP for a reportee.
-    /// Client provides secret key + TOTP code. If code matches, store the secret.
-    /// </summary>
-    [HttpPost("{reporteeId}/setup-totp")]
-    public async Task<ActionResult<TotpSetupResponse>> SetupTotp(int teamId, int reporteeId, [FromBody] TotpSetupRequest request)
-    {
-        var reportee = await _db.Reportees.FirstOrDefaultAsync(r => r.Id == reporteeId && r.TeamId == teamId);
-        if (reportee == null) return NotFound(new { error = "Reportee not found in this team" });
-
-        if (reportee.TotpSecret != null)
-            return BadRequest(new { error = "TOTP already set up for this reportee" });
-
-        if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
-            return BadRequest(new TotpSetupResponse(false, "TOTP code does not match the secret key"));
-
-        reportee.TotpSecret = request.SecretKey;
-        await _db.SaveChangesAsync();
-
-        return Ok(new TotpSetupResponse(true, "TOTP setup successful for reportee"));
+            new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, false, true));
     }
 
     /// <summary>
