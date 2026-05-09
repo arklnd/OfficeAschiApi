@@ -70,7 +70,23 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: .net-app
-      
+
+      - name: Install Azure CLI
+        run: |
+          if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+            Write-Host "Installing Azure CLI..."
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri https://aka.ms/installazurecliwindowsx64 -OutFile .\AzureCLI.msi
+            Start-Process msiexec.exe -ArgumentList '/I', 'AzureCLI.msi', '/quiet', '/norestart' -Wait
+            Remove-Item .\AzureCLI.msi
+            # Add to PATH for this session
+            $env:PATH = "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin;$env:PATH"
+          } else {
+            Write-Host "Azure CLI already installed"
+          }
+          az --version
+        shell: pwsh
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
