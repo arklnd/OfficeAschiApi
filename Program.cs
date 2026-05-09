@@ -53,11 +53,18 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "OfficeAschi API v1"));
 }
 
+// Serve Angular static files from wwwroot
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 // TOTP auth middleware (before controllers, after routing)
 app.UseMiddleware<TotpAuthMiddleware>();
 
 app.MapControllers();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+
+// Fallback to index.html for Angular client-side routing
+app.MapFallbackToFile("index.html");
 
 app.Run();
