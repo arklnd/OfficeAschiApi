@@ -50,7 +50,7 @@ public class ReporteesController : ControllerBase
             return BadRequest(new { error = "SecretKey and TotpCode are required to join a team" });
 
         if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
-            return BadRequest(new { error = "TOTP code does not match the secret key. Make sure your authenticator is synced." });
+            return BadRequest(new { error = "TOTP code does not match the secret key. Try again." });
 
         if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
             return NotFound(new { error = "Team not found" });

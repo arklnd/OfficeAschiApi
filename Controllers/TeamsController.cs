@@ -65,7 +65,7 @@ public class TeamsController : ControllerBase
             return BadRequest(new { error = "SecretKey and TotpCode are required for team creation" });
 
         if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
-            return BadRequest(new { error = "TOTP code does not match the secret key. Make sure your authenticator is synced." });
+            return BadRequest(new { error = "TOTP code does not match the secret key. Try again." });
 
         if (!string.IsNullOrWhiteSpace(request.Name) && await _db.Teams.AnyAsync(t => t.Name == request.Name))
             return Conflict(new { error = "Team name already taken" });
