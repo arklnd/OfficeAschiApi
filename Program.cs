@@ -47,11 +47,8 @@ using (var scope = app.Services.CreateScope())
 }
 
 // --- Middleware pipeline ---
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "OfficeAschi API v1"));
-}
+app.UseSwagger();
+app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "OfficeAschi API v1"));
 
 // Serve Angular static files from wwwroot
 app.UseDefaultFiles();
