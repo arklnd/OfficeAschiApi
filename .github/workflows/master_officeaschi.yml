@@ -12,6 +12,9 @@ on:
 jobs:
   build-and-deploy:
     runs-on: [self-hosted, deploy-az]
+    defaults:
+      run:
+        shell: pwsh
     permissions:
       id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
@@ -37,7 +40,6 @@ jobs:
             echo "installed=false" >> $env:GITHUB_OUTPUT
             Write-Host "Result: Node.js 20+ is NOT installed"
           }
-        shell: pwsh
 
       - name: Set up Node.js
         if: steps.check-node.outputs.installed == 'false'
@@ -70,7 +72,6 @@ jobs:
             echo "installed=false" >> $env:GITHUB_OUTPUT
             Write-Host "Result: .NET 10 is NOT installed"
           }
-        shell: pwsh
 
       - name: Set up .NET Core
         if: steps.check-dotnet.outputs.installed == 'false'
@@ -97,7 +98,6 @@ jobs:
           echo $cliPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $env:PATH = "$cliPath;$env:PATH"
           az --version
-        shell: pwsh
 
       - name: Login to Azure
         uses: azure/login@v2
