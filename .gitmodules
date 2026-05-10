@@ -1,3 +1,4 @@
 [submodule "ClientApp"]
 	path = ClientApp
 	url = https://github.com/arklnd/OfficeAschiApp.git
+	branch = master
