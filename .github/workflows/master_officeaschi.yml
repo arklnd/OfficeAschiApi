@@ -19,8 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          clean: false
           submodules: recursive
+        continue-on-error: true
 
       - name: Update ClientApp to latest
         run: git submodule update --remote --merge ClientApp
