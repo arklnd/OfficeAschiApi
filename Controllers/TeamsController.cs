@@ -88,4 +88,40 @@ public class TeamsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = team.Id },
             new TeamResponse(team.Id, team.Name, true));
     }
+
+    /// <summary>
+    /// Delete a team and all its members, seats, and bookings (manager TOTP required).
+    /// Authorization: TOTP manager:{teamId}:{code}
+    /// </summary>
+    [HttpDelete("{id}")]
+    [TotpAuth]
+    public async Task<ActionResult> Delete(int id)
+    {
+        var authId = (int)HttpContext.Items["TotpEntityId"]!;
+        var authType = (string)HttpContext.Items["TotpEntityType"]!;
+        if (authType != "manager" || authId != id)
+            return Forbid();
+
+        var team = await _db.Teams.FindAsync(id);
+        if (team == null) return NotFound(new { error = "Team not found" });
+
+        // Delete all bookings for this team first (FK restrict)
+        var bookings = await _db.Bookings.Where(b => b.TeamId == id).ToListAsync();
+        _db.Bookings.RemoveRange(bookings);
+
+        // Delete all reportees
+        var reportees = await _db.Reportees.Where(r => r.TeamId == id).ToListAsync();
+        _db.Reportees.RemoveRange(reportees);
+
+        // Delete all seats
+        var seats = await _db.Seats.Where(s => s.TeamId == id).ToListAsync();
+        _db.Seats.RemoveRange(seats);
+
+        // Delete the team
+        _db.Teams.Remove(team);
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "Team deleted", bookingsRemoved = bookings.Count, membersRemoved = reportees.Count, seatsRemoved = seats.Count });
+    }
 }

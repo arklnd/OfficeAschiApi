@@ -14,11 +14,13 @@ public class ReporteesController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly TotpService _totpService;
+    private readonly WaitlistService _waitlistService;
 
-    public ReporteesController(AppDbContext db, TotpService totpService)
+    public ReporteesController(AppDbContext db, TotpService totpService, WaitlistService waitlistService)
     {
         _db = db;
         _totpService = totpService;
+        _waitlistService = waitlistService;
     }
 
     /// <summary>
@@ -99,5 +101,80 @@ public class ReporteesController : ControllerBase
         await _db.SaveChangesAsync();
 
         return Ok(new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, true, reportee.TotpSecret != null));
+    }
+
+    /// <summary>
+    /// Deny a pending reportee's join request (manager TOTP required).
+    /// Only works on reportees that are NOT yet approved.
+    /// Authorization: TOTP manager:{teamId}:{code}
+    /// </summary>
+    [HttpDelete("{reporteeId}/deny")]
+    [TotpAuth]
+    public async Task<ActionResult> Deny(int teamId, int reporteeId)
+    {
+        var authId = (int)HttpContext.Items["TotpEntityId"]!;
+        var authType = (string)HttpContext.Items["TotpEntityType"]!;
+        if (authType != "manager" || authId != teamId)
+            return Forbid();
+
+        var reportee = await _db.Reportees.FirstOrDefaultAsync(r => r.Id == reporteeId && r.TeamId == teamId);
+        if (reportee == null) return NotFound(new { error = "Reportee not found in this team" });
+
+        if (reportee.IsApproved)
+            return BadRequest(new { error = "Cannot deny an already approved member. Use remove instead." });
+
+        // Clean up any bookings (shouldn't exist for unapproved, but defensive)
+        var bookings = await _db.Bookings.Where(b => b.ReporteeId == reporteeId).ToListAsync();
+        _db.Bookings.RemoveRange(bookings);
+
+        _db.Reportees.Remove(reportee);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { message = "Join request denied", reportee = reportee.FriendlyName });
+    }
+
+    /// <summary>
+    /// Remove an approved member from the team (manager TOTP required).
+    /// Deletes all their bookings, vacates seats, and auto-promotes waitlisted entries.
+    /// Authorization: TOTP manager:{teamId}:{code}
+    /// </summary>
+    [HttpDelete("{reporteeId}")]
+    [TotpAuth]
+    public async Task<ActionResult> Remove(int teamId, int reporteeId)
+    {
+        var authId = (int)HttpContext.Items["TotpEntityId"]!;
+        var authType = (string)HttpContext.Items["TotpEntityType"]!;
+        if (authType != "manager" || authId != teamId)
+            return Forbid();
+
+        var reportee = await _db.Reportees.FirstOrDefaultAsync(r => r.Id == reporteeId && r.TeamId == teamId);
+        if (reportee == null) return NotFound(new { error = "Reportee not found in this team" });
+
+        // Collect confirmed bookings for waitlist promotion
+        var bookings = await _db.Bookings.Where(b => b.ReporteeId == reporteeId).ToListAsync();
+        var confirmedBookings = bookings.Where(b => b.Status == BookingStatus.Confirmed).ToList();
+
+        // Remove all bookings
+        _db.Bookings.RemoveRange(bookings);
+        await _db.SaveChangesAsync();
+
+        // Promote waitlisted entries for each vacated seat
+        foreach (var cb in confirmedBookings)
+        {
+            await _waitlistService.PromoteWaitlistAsync(teamId, cb.SeatId, cb.Date);
+        }
+
+        // Remove the reportee
+        _db.Reportees.Remove(reportee);
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "Member removed",
+            reportee = reportee.FriendlyName,
+            bookingsRemoved = bookings.Count,
+            seatsVacated = confirmedBookings.Count,
+            waitlistPromotions = confirmedBookings.Count
+        });
     }
 }
