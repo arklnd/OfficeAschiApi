@@ -20,6 +20,9 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Update ClientApp to latest
+        run: git submodule update --remote --merge ClientApp
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
