@@ -25,7 +25,22 @@ jobs:
       - name: Update ClientApp to latest
         run: git submodule update --remote --merge ClientApp
 
+      - name: Check Node.js
+        id: check-node
+        run: |
+          $nodeVersion = node -v 2>$null
+          Write-Host "Installed Node.js: $nodeVersion"
+          if ($nodeVersion -match '^v(2[0-9]|[3-9][0-9])\.') {
+            echo "installed=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Result: Node.js 20+ is already installed"
+          } else {
+            echo "installed=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Result: Node.js 20+ is NOT installed"
+          }
+        shell: powershell
+
       - name: Set up Node.js
+        if: steps.check-node.outputs.installed == 'false'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -44,10 +59,13 @@ jobs:
         id: check-dotnet
         run: |
           $sdkList = dotnet --list-sdks 2>$null
+          Write-Host "Installed SDKs: $sdkList"
           if ($sdkList -match '^10\.') {
             echo "installed=true" >> $env:GITHUB_OUTPUT
+            Write-Host "Result: .NET 10 is already installed"
           } else {
             echo "installed=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Result: .NET 10 is NOT installed"
           }
         shell: powershell
 
