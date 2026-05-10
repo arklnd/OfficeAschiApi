@@ -10,9 +10,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: [self-hosted, deploy-az]
     permissions:
+      id-token: write #This is required for requesting the JWT
       contents: read #This is required for actions/checkout
 
     steps:
@@ -58,25 +59,6 @@ jobs:
       - name: dotnet publish
         run: dotnet publish OfficeAschiApi.csproj -c Release -o "${{env.DOTNET_ROOT}}/myapp"
 
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
-        with:
-          name: .net-app
-          path: "${{env.DOTNET_ROOT}}/myapp"
-
-  deploy:
-    runs-on: [self-hosted, deploy-az]
-    needs: build
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
-
-    steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
-        with:
-          name: .net-app
-
       - name: Install Azure CLI
         run: |
           if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
@@ -108,5 +90,5 @@ jobs:
         with:
           app-name: 'OfficeAschi'
           slot-name: 'Production'
-          package: .
+          package: "${{env.DOTNET_ROOT}}/myapp"
           
