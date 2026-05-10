@@ -63,6 +63,9 @@ jobs:
           if ($sdkList -match '^10\.') {
             echo "installed=true" >> $env:GITHUB_OUTPUT
             Write-Host "Result: .NET 10 is already installed"
+            $dotnetPath = (Get-Command dotnet).Source | Split-Path
+            Write-Host "Setting DOTNET_ROOT to $dotnetPath"
+            echo "DOTNET_ROOT=$dotnetPath" >> $env:GITHUB_ENV
           } else {
             echo "installed=false" >> $env:GITHUB_OUTPUT
             Write-Host "Result: .NET 10 is NOT installed"
