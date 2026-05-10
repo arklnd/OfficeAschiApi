@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using OfficeAschiApi.Data;
-using OfficeAschiApi.DTOs;
 using OfficeAschiApi.Models;
 
 namespace OfficeAschiApi.Services;
@@ -8,12 +7,10 @@ namespace OfficeAschiApi.Services;
 public class WaitlistService
 {
     private readonly AppDbContext _db;
-    private readonly NotificationService _notificationService;
 
-    public WaitlistService(AppDbContext db, NotificationService notificationService)
+    public WaitlistService(AppDbContext db)
     {
         _db = db;
-        _notificationService = notificationService;
     }
 
     /// <summary>
@@ -38,15 +35,6 @@ public class WaitlistService
             nextForSeat.Status = BookingStatus.Confirmed;
             // SeatId is already the vacated seat
             await _db.SaveChangesAsync();
-
-            var seat = await _db.Seats.FindAsync(vacatedSeatId);
-            await _notificationService.SendToReporteeAsync(nextForSeat.ReporteeId, new NotificationPayload(
-                "Booking Confirmed!",
-                $"Your waitlisted booking for {seat?.Label ?? "a seat"} on {date:yyyy-MM-dd} has been confirmed!",
-                $"/team/{teamId}",
-                "waitlist_promoted",
-                Guid.NewGuid().ToString()
-            ));
             return;
         }
 
@@ -63,15 +51,6 @@ public class WaitlistService
             nextGlobal.Status = BookingStatus.Confirmed;
             nextGlobal.SeatId = vacatedSeatId; // assign the vacated seat
             await _db.SaveChangesAsync();
-
-            var seat = await _db.Seats.FindAsync(vacatedSeatId);
-            await _notificationService.SendToReporteeAsync(nextGlobal.ReporteeId, new NotificationPayload(
-                "Booking Confirmed!",
-                $"Your waitlisted booking for {seat?.Label ?? "a seat"} on {date:yyyy-MM-dd} has been confirmed!",
-                $"/team/{teamId}",
-                "waitlist_promoted",
-                Guid.NewGuid().ToString()
-            ));
         }
     }
 }

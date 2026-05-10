@@ -15,14 +15,12 @@ public class ReporteesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly TotpService _totpService;
     private readonly WaitlistService _waitlistService;
-    private readonly NotificationService _notificationService;
 
-    public ReporteesController(AppDbContext db, TotpService totpService, WaitlistService waitlistService, NotificationService notificationService)
+    public ReporteesController(AppDbContext db, TotpService totpService, WaitlistService waitlistService)
     {
         _db = db;
         _totpService = totpService;
         _waitlistService = waitlistService;
-        _notificationService = notificationService;
     }
 
     /// <summary>
@@ -76,16 +74,6 @@ public class ReporteesController : ControllerBase
         _db.Reportees.Add(reportee);
         await _db.SaveChangesAsync();
 
-        // Notify manager about new join request
-        var team = await _db.Teams.FindAsync(teamId);
-        await _notificationService.SendToManagerAsync(teamId, new NotificationPayload(
-            "New Join Request",
-            $"{reportee.FriendlyName} has requested to join {team?.Name ?? "your team"}",
-            $"/team/{teamId}",
-            "join_request",
-            Guid.NewGuid().ToString()
-        ));
-
         return CreatedAtAction(nameof(List), new { teamId },
             new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, false, true));
     }
@@ -112,16 +100,6 @@ public class ReporteesController : ControllerBase
         reportee.IsApproved = true;
         await _db.SaveChangesAsync();
 
-        // Notify reportee about approval
-        var approveTeam = await _db.Teams.FindAsync(teamId);
-        await _notificationService.SendToReporteeAsync(reporteeId, new NotificationPayload(
-            "Membership Approved!",
-            $"You've been approved to join {approveTeam?.Name ?? "the team"}!",
-            $"/team/{teamId}",
-            "membership_approved",
-            Guid.NewGuid().ToString()
-        ));
-
         return Ok(new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, true, reportee.TotpSecret != null));
     }
 
@@ -144,19 +122,6 @@ public class ReporteesController : ControllerBase
 
         if (reportee.IsApproved)
             return BadRequest(new { error = "Cannot deny an already approved member. Use remove instead." });
-
-        // Notify reportee about denial before deleting
-        var denyTeam = await _db.Teams.FindAsync(teamId);
-        await _notificationService.SendToReporteeAsync(reporteeId, new NotificationPayload(
-            "Request Denied",
-            $"Your request to join {denyTeam?.Name ?? "the team"} was denied",
-            "/",
-            "membership_denied",
-            Guid.NewGuid().ToString()
-        ));
-
-        // Clean up subscriptions for this reportee
-        await _notificationService.CleanupSubscriptionsAsync("reportee", reporteeId);
 
         // Clean up any bookings (shouldn't exist for unapproved, but defensive)
         var bookings = await _db.Bookings.Where(b => b.ReporteeId == reporteeId).ToListAsync();
@@ -185,16 +150,6 @@ public class ReporteesController : ControllerBase
         var reportee = await _db.Reportees.FirstOrDefaultAsync(r => r.Id == reporteeId && r.TeamId == teamId);
         if (reportee == null) return NotFound(new { error = "Reportee not found in this team" });
 
-        // Notify reportee about removal before deleting
-        var removeTeam = await _db.Teams.FindAsync(teamId);
-        await _notificationService.SendToReporteeAsync(reporteeId, new NotificationPayload(
-            "Removed from Team",
-            $"You've been removed from {removeTeam?.Name ?? "the team"}. Your bookings have been cancelled.",
-            "/",
-            "booking_cancelled",
-            Guid.NewGuid().ToString()
-        ));
-
         // Collect confirmed bookings for waitlist promotion
         var bookings = await _db.Bookings.Where(b => b.ReporteeId == reporteeId).ToListAsync();
         var confirmedBookings = bookings.Where(b => b.Status == BookingStatus.Confirmed).ToList();
@@ -208,9 +163,6 @@ public class ReporteesController : ControllerBase
         {
             await _waitlistService.PromoteWaitlistAsync(teamId, cb.SeatId, cb.Date);
         }
-
-        // Clean up push subscriptions
-        await _notificationService.CleanupSubscriptionsAsync("reportee", reporteeId);
 
         // Remove the reportee
         _db.Reportees.Remove(reportee);
