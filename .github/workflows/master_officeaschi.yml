@@ -38,7 +38,19 @@ jobs:
         run: npm run build -- --configuration production
         working-directory: ClientApp
 
+      - name: Check .NET SDK 10
+        id: check-dotnet
+        run: |
+          $sdkList = dotnet --list-sdks 2>$null
+          if ($sdkList -match '^10\.') {
+            echo "installed=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "installed=false" >> $env:GITHUB_OUTPUT
+          }
+        shell: powershell
+
       - name: Set up .NET Core
+        if: steps.check-dotnet.outputs.installed == 'false'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.x'
