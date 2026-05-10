@@ -11,6 +11,7 @@ public class AppDbContext : DbContext
     public DbSet<Seat> Seats => Set<Seat>();
     public DbSet<Reportee> Reportees => Set<Reportee>();
     public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,6 +44,12 @@ public class AppDbContext : DbContext
 
             // A reportee can only have one booking (confirmed or waitlisted) per date per team
             e.HasIndex(b => new { b.Date, b.ReporteeId }).IsUnique();
+        });
+
+        modelBuilder.Entity<PushSubscription>(e =>
+        {
+            e.HasOne(p => p.Team).WithMany().HasForeignKey(p => p.TeamId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(p => new { p.Endpoint, p.EntityType, p.EntityId }).IsUnique();
         });
     }
 }

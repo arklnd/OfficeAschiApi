@@ -33,3 +33,7 @@ public record WaitlistInfo(int BookingId, string ReporteeName, string DesiredSea
 
 // --- Search ---
 public record TeamSearchResult(int Id, string Name, int SeatCount, int MemberCount);
+
+// --- Push Notifications ---
+public record PushSubscriptionRequest(string Endpoint, string P256dhKey, string AuthKey);
+public record NotificationPayload(string Title, string Body, string? Url, string EventType, string? NotificationId = null);
