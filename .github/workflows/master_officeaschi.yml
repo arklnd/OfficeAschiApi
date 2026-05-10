@@ -19,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          clean: false
           submodules: recursive
 
       - name: Update ClientApp to latest
