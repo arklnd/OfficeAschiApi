@@ -179,38 +179,38 @@ When a manager removes a member, all their bookings are cancelled. For each vaca
 ┌──────────────────────────────────────────────────────────────────────┐
 │                          OfficeAschi                                  │
 │                                                                      │
-│  ①  ┌──────────┐    ┌──────────────┐    ┌───────────────────────┐    │
-│     │  Anyone   │───▶│ Create Team  │───▶│ Manager (with TOTP)   │    │
+│  (1)┌──────────┐    ┌──────────────┐    ┌───────────────────────┐    │
+│     │  Anyone  │───▶│ Create Team  │───▶│ Manager (with TOTP)   │    │
 │     └──────────┘    └──────────────┘    └───────┬───────────────┘    │
 │          │                                      │                    │
-│  ②       │          ┌──────────────┐       ┌────▼────┐               │
+│  (2)     │          ┌──────────────┐       ┌────▼────┐               │
 │          ├─────────▶│  Join Team   │──────▶│ Pending │               │
 │          │          └──────────────┘       └────┬────┘               │
 │          │                                      │                    │
-│  ③       │                              ┌───────▼────────┐           │
-│          │                              │ Manager reviews │           │
+│  (3)     │                              ┌───────▼────────┐           │
+│          │                              │ Manager reviews│           │
 │          │                              └───┬────────┬───┘           │
 │          │                             Approve     Deny              │
 │          │                                │          │               │
-│          │                          ┌─────▼──┐   ┌──▼───┐           │
+│          │                          ┌─────▼──┐   ┌───▼───┐           │
 │          │                          │Approved│   │Removed│           │
-│          │                          └────┬───┘   └──────┘            │
+│          │                          └────┬───┘   └───────┘           │
 │          │                               │                           │
-│  ④       │    ┌──────────────────────┐   │                           │
-│          │    │  View Availability   │◀──┤                           │
+│  (4)     │    ┌──────────────────────┐   │                           │
+│          ├───▶│  View Availability   │◀──┤                           │
 │          │    └──────────────────────┘   │                           │
 │          │                               ▼                           │
-│  ⑤       │                        ┌─────────────┐                    │
-│          │                        │  Book Seat   │                    │
+│  (5)     │                        ┌─────────────┐                    │
+│          │                        │  Book Seat  │                    │
 │          │                        └──────┬──────┘                    │
 │          │                          ┌────┴────┐                      │
 │          │                     Seat free?   All full?                │
 │          │                          │          │                     │
 │          │                    ┌─────▼──┐  ┌───▼──────┐               │
-│  ⑥       │                   │Confirmed│  │Waitlisted│               │
+│  (6)     │                   │Confirmed│  │Waitlisted│               │
 │          │                    └────┬───┘  └───┬──────┘               │
 │          │                         │          │                      │
-│  ⑦       │                    Cancel?    Auto-promoted               │
+│  (7)     │                    Cancel?    Auto-promoted               │
 │          │                         │     when seat freed             │
 │          │                         ▼          │                      │
 │          │                   ┌──────────┐     │                      │
@@ -218,13 +218,13 @@ When a manager removes a member, all their bookings are cancelled. For each vaca
 │                              └──────────┘                            │
 └──────────────────────────────────────────────────────────────────────┘
 
-  ① Create Team    — anyone creates a team + sets up manager TOTP
-  ② Join Team      — anyone joins a team + sets up member TOTP (pending)
-  ③ Approve / Deny — manager reviews pending members
-  ④ View           — anyone checks seat availability for a date
-  ⑤ Book Seat      — approved member books a specific seat
-  ⑥ Waitlist       — if all seats full, member waitlists for a seat
-  ⑦ Cancel         — cancelling a confirmed booking auto-promotes waitlist
+  (1) Create Team    — anyone creates a team + sets up manager TOTP
+  (2) Join Team      — anyone joins a team + sets up member TOTP (pending)
+  (3) Approve / Deny — manager reviews pending members
+  (4) View           — anyone checks seat availability for a date
+  (5) Book Seat      — approved member books a specific seat
+  (6) Waitlist       — if all seats full, member waitlists for a seat
+  (7) Cancel         — cancelling a confirmed booking auto-promotes waitlist
 ```
 
 ---
@@ -262,25 +262,25 @@ What happens behind the scenes:
 
   Browser                              API
     │                                   │
-    │ ① generateSecret()               │
+    │ (1) generateSecret()               │
     │    (otpauth library, client-side) │
     │    ──▶ secret = "JBSWY..."       │
     │                                   │
-    │ ② Show QR + secret to user       │
+    │ (2) Show QR + secret to user       │
     │    User scans with authenticator  │
     │                                   │
-    │ ③ User enters 6-digit code       │
+    │ (3) User enters 6-digit code       │
     │    from authenticator app         │
     │                                   │
-    │ ④ POST /api/teams                │
+    │ (4) POST /api/teams                │
     │    { name, secretKey, totpCode }  │
     │    ──────────────────────────────▶│
-    │                                   │ ⑤ Validate code against secret
+    │                                   │ (5) Validate code against secret
     │                                   │   ✓ Create team + store secret
     │           201 Created             │
     │    ◀──────────────────────────────│
     │                                   │
-    │ ⑥ Store secret in localStorage   │
+    │ (6) Store secret in localStorage   │
     │    totp_manager_{teamId}          │
     │                                   │
 ```
@@ -304,28 +304,28 @@ On the team detail page → Manage tab, the manager types a seat label and click
 
   Browser                                  API
     │                                       │
-    │ ① User types "S4", clicks [+ Add]    │
+    │ (1) User types "S4", clicks [+ Add]    │
     │                                       │
-    │ ② Interceptor reads secret from      │
+    │ (2) Interceptor reads secret from      │
     │    localStorage, generates TOTP code  │
     │                                       │
-    │ ③ POST /api/teams/1/seats            │
+    │ (3) POST /api/teams/1/seats            │
     │    { "label": "S4" }                  │
     │    Authorization: TOTP manager:1:code │
     │    ───────────────────────────────────▶│
-    │                                       │ ④ Validate TOTP
+    │                                       │ (4) Validate TOTP
     │                                       │   ✓ Create seat
     │           201 Created                 │
     │    ◀───────────────────────────────────│
     │                                       │
-    │ ⑤ Toast: "Seat S4 added"             │
+    │ (5) Toast: "Seat S4 added"             │
     │    Refresh seat list                  │
 ```
 
 If the secret is not in localStorage (different browser), the interceptor opens a TOTP prompt dialog instead:
 
 ```
-  ② (alternate) No secret in localStorage:
+  (2) (alternate) No secret in localStorage:
 
   ┌──────────────────────────────────┐
   │       TOTP Code Required         │
@@ -334,12 +334,12 @@ If the secret is not in localStorage (different browser), the interceptor opens 
   │  code for design-squad to        │
   │  add seat.                       │
   │                                  │
-  │  TOTP Code: [ _ _ _ _ _ _ ]     │
+  │  TOTP Code: [ _ _ _ _ _ _ ]      │
   │                                  │
   │     [Cancel]   [ADD SEAT]        │
   └──────────────────────────────────┘
 
-  ③ User enters code manually → request sent with that code
+  (3) User enters code manually → request sent with that code
 ```
 
 ---
@@ -365,40 +365,40 @@ On the team detail page, a visitor clicks "Join Team." The dialog generates a ne
 │         │ ░░██░█░░░█░ │    from manager)│
 │         └─────────────┘                 │
 │                                         │
-│  Secret: [KZQW6YLMN5XW2ZDB]            │
+│  Secret: [KZQW6YLMN5XW2ZDB]             │
 │  [Download QR]  [Copy Secret]           │
 │                                         │
-│  Verify code: [ 7 8 9 0 1 2 ]          │
+│  Verify code: [ 7 8 9 0 1 2 ]           │
 │                                         │
 │         [Cancel]  [Join Team]           │
 └─────────────────────────────────────────┘
 
-  Browser                                    API
-    │                                         │
-    │ ① generateSecret() (client-side)       │
-    │    Show QR code + secret               │
-    │                                         │
-    │ ② User scans QR with authenticator     │
-    │                                         │
-    │ ③ User enters name + 6-digit code      │
-    │    Clicks [Join Team]                   │
-    │                                         │
-    │ ④ POST /api/teams/1/reportees          │
-    │    { friendlyName: "Alice",             │
-    │      secretKey: "KZQW6...",             │
-    │      totpCode: "789012" }               │
+  Browser                                     API
+    │                                          │
+    │ (1) generateSecret() (client-side)       │
+    │    Show QR code + secret                 │
+    │                                          │
+    │ (2) User scans QR with authenticator     │
+    │                                          │
+    │ (3) User enters name + 6-digit code      │
+    │    Clicks [Join Team]                    │
+    │                                          │
+    │ (4) POST /api/teams/1/reportees          │
+    │    { friendlyName: "Alice",              │
+    │      secretKey: "KZQW6...",              │
+    │      totpCode: "789012" }                │
     │    ────────────────────────────────────▶ │
-    │                                         │ ⑤ Validate code against secret
-    │                                         │   ✓ Create reportee (pending)
-    │                                         │   Store TOTP secret in DB
-    │           201 Created                   │
+    │                                          │ (5) Validate code against secret
+    │                                          │   ✓ Create reportee (pending)
+    │                                          │   Store TOTP secret in DB
+    │           201 Created                    │
     │    ◀──────────────────────────────────── │
-    │                                         │
-    │ ⑥ Store secret: totp_reportee_{id}     │
-    │    Store identity: reportee_{teamId}    │
-    │    Toast: "Joined as Alice!"            │
-    │                                         │
-    │ ⚠ Status = PENDING (cannot book yet)    │
+    │                                          │
+    │ (6) Store secret: totp_reportee_{id}     │
+    │    Store identity: reportee_{teamId}     │
+    │    Toast: "Joined as Alice!"             │
+    │                                          │
+    │ ⚠ Status = PENDING (cannot book yet)     │
 ```
 
 ---
@@ -419,23 +419,23 @@ Pending members appear in the Manage tab. The manager can approve or deny each o
 
   Approve flow:
   ─────────────
-    ① Manager clicks [Approve] on Alice
-    ② Interceptor auto-attaches TOTP header
-    ③ PUT /api/teams/1/reportees/1/approve
+    (1) Manager clicks [Approve] on Alice
+    (2) Interceptor auto-attaches TOTP header
+    (3) PUT /api/teams/1/reportees/1/approve
        Authorization: TOTP manager:1:...
-    ④ API validates TOTP → sets IsApproved = true
-    ⑤ 200 OK → Toast: "Reportee approved"
+    (4) API validates TOTP → sets IsApproved = true
+    (5) 200 OK → Toast: "Reportee approved"
 
   Deny flow:
   ──────────
-    ① Manager clicks [Deny] on Alice
-    ② Confirm dialog: "Deny Alice's request to join?"
-    ③ Manager clicks [Yes, Deny]
-    ④ Interceptor auto-attaches TOTP header
-    ⑤ DELETE /api/teams/1/reportees/1/deny
+    (1) Manager clicks [Deny] on Alice
+    (2) Confirm dialog: "Deny Alice's request to join?"
+    (3) Manager clicks [Yes, Deny]
+    (4) Interceptor auto-attaches TOTP header
+    (5) DELETE /api/teams/1/reportees/1/deny
        Authorization: TOTP manager:1:...
-    ⑥ API validates TOTP → deletes reportee record
-    ⑦ 200 OK → Toast: "Denied Alice's join request"
+    (6) API validates TOTP → deletes reportee record
+    (7) 200 OK → Toast: "Denied Alice's join request"
 ```
 
 ---
@@ -465,8 +465,8 @@ Clicking [+ Book] on an available seat:
   ┌──────────────────────────────────┐
   │       Book Window-1              │
   ├──────────────────────────────────┤
-  │  Book Alice on Window-1 for     │
-  │  2026-05-11?                    │
+  │  Book Alice on Window-1 for      │
+  │  2026-05-11?                     │
   │                                  │
   │   [Cancel]  [Confirm Booking]    │
   └──────────────────────────────────┘
@@ -475,38 +475,38 @@ Clicking [+ Book] on an available seat:
   ┌──────────────────────────────────┐
   │       Book Window-1              │
   ├──────────────────────────────────┤
-  │  Select a member to assign to   │
-  │  Window-1 for 2026-05-11.       │
+  │  Select a member to assign to    │
+  │  Window-1 for 2026-05-11.        │
   │                                  │
-  │  Member: [ Alice           ▾ ]  │
+  │  Member: [ Alice           ▾ ]   │
   │                                  │
   │     [Cancel]  [Book Seat]        │
   └──────────────────────────────────┘
 
-  Browser                                    API
-    │                                         │
-    │ ① User clicks [+ Book] on Window-1     │
-    │                                         │
-    │ ② Dialog opens (self-book or picker)    │
-    │    User confirms booking               │
-    │                                         │
-    │ ③ Interceptor reads reportee secret    │
-    │    from localStorage, generates code   │
-    │                                         │
-    │ ④ POST /api/bookings                   │
-    │    { reporteeId: 1, seatId: 3,          │
-    │      date: "2026-05-11" }               │
-    │    Authorization: TOTP reportee:1:...   │
+  Browser                                     API
+    │                                          │
+    │ (1) User clicks [+ Book] on Window-1     │
+    │                                          │
+    │ (2) Dialog opens (self-book or picker)   │
+    │    User confirms booking                 │
+    │                                          │
+    │ (3) Interceptor reads reportee secret    │
+    │    from localStorage, generates code     │
+    │                                          │
+    │ (4) POST /api/bookings                   │
+    │    { reporteeId: 1, seatId: 3,           │
+    │      date: "2026-05-11" }                │
+    │    Authorization: TOTP reportee:1:...    │
     │    ────────────────────────────────────▶ │
-    │                                         │ ⑤ Validate TOTP
-    │                                         │   Check: is reportee approved?
-    │                                         │   Check: seat free?
-    │                                         │   ✓ Create booking (Confirmed)
-    │         201 { status: "Confirmed" }     │
+    │                                          │ (5) Validate TOTP
+    │                                          │   Check: is reportee approved?
+    │                                          │   Check: seat free?
+    │                                          │   ✓ Create booking (Confirmed)
+    │         201 { status: "Confirmed" }      │
     │    ◀──────────────────────────────────── │
-    │                                         │
-    │ ⑥ Toast: "Booked Alice on Window-1"    │
-    │    Refresh availability view            │
+    │                                          │
+    │ (6) Toast: "Booked Alice on Window-1"    │
+    │    Refresh availability view             │
 ```
 
 ---
@@ -548,28 +548,28 @@ When every seat is booked, the available seats section disappears and a waitlist
 
   Browser                                    API
     │                                         │
-    │ ① User clicks [Wait] on Desk A         │
+    │ (1) User clicks [Wait] on Desk A         │
     │                                         │
-    │ ② Dialog confirms waitlist intent       │
+    │ (2) Dialog confirms waitlist intent       │
     │                                         │
-    │ ③ Interceptor attaches TOTP header     │
+    │ (3) Interceptor attaches TOTP header     │
     │                                         │
-    │ ④ POST /api/bookings                   │
+    │ (4) POST /api/bookings                   │
     │    { reporteeId: 4, seatId: 1,          │
     │      date: "2026-05-12" }               │
     │    Authorization: TOTP reportee:4:...   │
     │    ────────────────────────────────────▶ │
-    │                                         │ ⑤ Validate TOTP
+    │                                         │ (5) Validate TOTP
     │                                         │   Seat taken + ALL seats full
     │                                         │   → Create booking (Waitlisted)
     │       201 { status: "Waitlisted" }      │
     │    ◀──────────────────────────────────── │
     │                                         │
-    │ ⑥ Toast: "Waitlisted Dave for Desk A"  │
+    │ (6) Toast: "Waitlisted Dave for Desk A"  │
     │    Refresh → Dave appears in waitlist   │
 ```
 
-**Note:** If the chosen seat is taken but OTHER seats are free, the API rejects at step ⑤ with _"This seat is taken. Other seats are available — pick a different one."_
+**Note:** If the chosen seat is taken but OTHER seats are free, the API rejects at step (5) with _"This seat is taken. Other seats are available — pick a different one."_
 
 ---
 
@@ -578,9 +578,9 @@ When every seat is booked, the available seats section disappears and a waitlist
 When a confirmed booking is cancelled, the waitlist auto-promotion kicks in.
 
 ```
-  ① User clicks [✕] on Alice's confirmed booking for Desk A
+  (1) User clicks [✕] on Alice's confirmed booking for Desk A
 
-  ② Confirm dialog:
+  (2) Confirm dialog:
   ┌──────────────────────────────────┐
   │       Cancel Booking             │
   ├──────────────────────────────────┤
@@ -590,20 +590,20 @@ When a confirmed booking is cancelled, the waitlist auto-promotion kicks in.
   │   [No, Keep]  [Yes, Cancel]      │
   └──────────────────────────────────┘
 
-  ③ User clicks [Yes, Cancel]
+  (3) User clicks [Yes, Cancel]
 
   Browser                                    API
     │                                         │
-    │ ④ Interceptor attaches TOTP header     │
+    │ (4) Interceptor attaches TOTP header     │
     │                                         │
-    │ ⑤ DELETE /api/bookings/1               │
+    │ (5) DELETE /api/bookings/1               │
     │    Authorization: TOTP reportee:1:...   │
     │    ────────────────────────────────────▶ │
-    │                                         │ ⑥ Validate TOTP
+    │                                         │ (6) Validate TOTP
     │                                         │   Delete booking
     │                                         │
     │                          ┌──────────────────────────────────┐
-    │                          │ ⑦ Waitlist Promotion Logic:     │
+    │                          │ (7) Waitlist Promotion Logic:     │
     │                          │                                  │
     │                          │   Desk A is now free.            │
     │                          │                                  │
@@ -621,7 +621,7 @@ When a confirmed booking is cancelled, the waitlist auto-promotion kicks in.
     │           200 OK                        │
     │    ◀──────────────────────────────────── │
     │                                         │
-    │ ⑧ Toast: "Cancelled Alice's booking"   │
+    │ (8) Toast: "Cancelled Alice's booking"   │
     │    Refresh → Dave now shows Confirmed   │
 ```
 
@@ -668,9 +668,9 @@ From the Manage tab, the manager can remove an approved member. This cascades �
 │  👤 Carol                        [🗑]   │
 └─────────────────────────────────────────┘
 
-  ① Manager clicks [🗑] on Alice
+  (1) Manager clicks [🗑] on Alice
 
-  ② Confirm dialog:
+  (2) Confirm dialog:
   ┌──────────────────────────────────┐
   │       Remove Member              │
   ├──────────────────────────────────┤
@@ -681,24 +681,24 @@ From the Manage tab, the manager can remove an approved member. This cascades �
   │    [No, Keep]  [Yes, Remove]     │
   └──────────────────────────────────┘
 
-  ③ Manager clicks [Yes, Remove]
+  (3) Manager clicks [Yes, Remove]
 
   Browser                                    API
     │                                         │
-    │ ④ Interceptor attaches TOTP header     │
+    │ (4) Interceptor attaches TOTP header     │
     │                                         │
-    │ ⑤ DELETE /api/teams/1/reportees/1      │
+    │ (5) DELETE /api/teams/1/reportees/1      │
     │    Authorization: TOTP manager:1:...    │
     │    ────────────────────────────────────▶ │
-    │                                         │ ⑥ Validate TOTP
-    │                                         │ ⑦ Cancel all Alice's bookings
-    │                                         │ ⑧ For each confirmed seat vacated:
+    │                                         │ (6) Validate TOTP
+    │                                         │ (7) Cancel all Alice's bookings
+    │                                         │ (8) For each confirmed seat vacated:
     │                                         │      → run waitlist promotion
-    │                                         │ ⑨ Delete Alice's reportee record
+    │                                         │ (9) Delete Alice's reportee record
     │           200 OK                        │
     │    ◀──────────────────────────────────── │
     │                                         │
-    │ ⑩ Toast: "Removed Alice from team"     │
+    │ (10) Toast: "Removed Alice from team"     │
     │    Refresh member list + availability   │
 ```
 
@@ -713,19 +713,19 @@ From the Manage tab, seats show an ✕ button. Deletion only works if the seat h
   │  Seats: [Desk A ✕] [Desk B ✕] [S4 ✕]   │
   └──────────────────────────────────────────┘
 
-  ① Manager clicks ✕ on S4
-  ② Interceptor attaches TOTP header
-  ③ DELETE /api/teams/1/seats/{seatId}
+  (1) Manager clicks ✕ on S4
+  (2) Interceptor attaches TOTP header
+  (3) DELETE /api/teams/1/seats/{seatId}
      Authorization: TOTP manager:1:...
 
-  ④ API checks:
+  (4) API checks:
      ├── Has bookings?
      │   → YES: 400 "Cannot delete seat with existing
      │          bookings. Cancel all bookings first."
      │
      └── NO bookings?
-         → ⑤ Delete seat
-         → ⑥ 200 OK → Toast: "Seat S4 deleted"
+         → (5) Delete seat
+         → (6) 200 OK → Toast: "Seat S4 deleted"
 ```
 
 ---
@@ -743,9 +743,9 @@ In the Manage tab's Danger Zone, the manager can permanently delete the entire t
 │  [Delete Team]                          │
 └─────────────────────────────────────────┘
 
-  ① Manager clicks [Delete Team]
+  (1) Manager clicks [Delete Team]
 
-  ② Confirm dialog:
+  (2) Confirm dialog:
   ┌──────────────────────────────────┐
   │       Delete Team                │
   ├──────────────────────────────────┤
@@ -757,24 +757,24 @@ In the Manage tab's Danger Zone, the manager can permanently delete the entire t
   │    [No, Keep]  [Yes, Delete]     │
   └──────────────────────────────────┘
 
-  ③ Manager clicks [Yes, Delete]
+  (3) Manager clicks [Yes, Delete]
 
   Browser                                    API
     │                                         │
-    │ ④ Interceptor attaches TOTP header     │
+    │ (4) Interceptor attaches TOTP header     │
     │                                         │
-    │ ⑤ DELETE /api/teams/1                  │
+    │ (5) DELETE /api/teams/1                  │
     │    Authorization: TOTP manager:1:...    │
     │    ────────────────────────────────────▶ │
-    │                                         │ ⑥ Validate TOTP
-    │                                         │ ⑦ Delete all bookings
-    │                                         │ ⑧ Delete all reportees
-    │                                         │ ⑨ Delete all seats
-    │                                         │ ⑩ Delete team record
+    │                                         │ (6) Validate TOTP
+    │                                         │ (7) Delete all bookings
+    │                                         │ (8) Delete all reportees
+    │                                         │ (9) Delete all seats
+    │                                         │ (10) Delete team record
     │           200 OK                        │
     │    ◀──────────────────────────────────── │
     │                                         │
-    │ ⑪ Toast: "Team design-squad deleted"   │
+    │ (11) Toast: "Team design-squad deleted"   │
     │    Navigate → Home page                 │
 ```
 
@@ -788,24 +788,24 @@ This is the invisible magic that makes auth seamless in the UI. The HTTP interce
   ┌────────────────────────────────────────────────────────────┐
   │                     HTTP Interceptor                        │
   │                                                            │
-  │  ① Request has TOTP context?                               │
+  │  (1) Request has TOTP context?                               │
   │     (entity type + entity id on HttpContext)               │
   │     │                                                      │
-  │     ├── NO ──▶ ② Pass through (public endpoint)           │
+  │     ├── NO ──▶ (2) Pass through (public endpoint)           │
   │     │                                                      │
   │     └── YES                                                │
   │          │                                                 │
-  │     ③ Secret in localStorage?                              │
+  │     (3) Secret in localStorage?                              │
   │          │                                                 │
   │          ├── YES                                           │
   │          │    │                                            │
-  │          │    ④ Generate 6-digit code from secret          │
-  │          │    ⑤ Attach: Authorization: TOTP type:id:code  │
-  │          │    ⑥ Send request ──▶ API                      │
+  │          │    (4) Generate 6-digit code from secret          │
+  │          │    (5) Attach: Authorization: TOTP type:id:code  │
+  │          │    (6) Send request ──▶ API                      │
   │          │                                                 │
   │          └── NO                                            │
   │               │                                            │
-  │               ④ Open TOTP Prompt Dialog:                   │
+  │               (4) Open TOTP Prompt Dialog:                   │
   │               ┌─────────────────────────┐                  │
   │               │  🔒 TOTP Code Required  │                  │
   │               │  "Enter 6-digit code    │                  │
@@ -816,8 +816,8 @@ This is the invisible magic that makes auth seamless in the UI. The HTTP interce
   │               │  [Cancel] [Authorize]   │                  │
   │               └──────────┬──────────────┘                  │
   │                          │                                 │
-  │               ⑤ User enters code → Attach header           │
-  │               ⑥ Send request ──▶ API                       │
+  │               (5) User enters code → Attach header           │
+  │               (6) Send request ──▶ API                       │
   │               (or Cancel → request aborted, returns EMPTY) │
   └────────────────────────────────────────────────────────────┘
 ```
