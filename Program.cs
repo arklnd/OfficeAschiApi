@@ -26,9 +26,18 @@ builder.Services.AddSwaggerGen(c =>
     c.DocumentFilter<TotpSecurityDocumentFilter>();
 });
 
-// EF Core + SQLite
-builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseSqlite("Data Source=officeaschi.db"));
+// EF Core — controlled by DB_TYPE env variable (AZURE_SQL or SQLITE)
+var dbType = builder.Configuration["DB_TYPE"] ?? "SQLITE";
+if (dbType.Equals("AZURE_SQL", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddDbContext<AppDbContext>(opt =>
+        opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+}
+else
+{
+    builder.Services.AddDbContext<AppDbContext>(opt =>
+        opt.UseSqlite("Data Source=officeaschi.db"));
+}
 
 // App services
 builder.Services.AddSingleton<TotpService>();
