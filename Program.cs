@@ -23,10 +23,7 @@ builder.Services.AddSwaggerGen(c =>
         Description = "TOTP auth. Format: TOTP manager:{teamId}:{code} or TOTP reportee:{reporteeId}:{code}"
     };
     c.AddSecurityDefinition("TOTP", totpScheme);
-    c.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
-    {
-        { new OpenApiSecuritySchemeReference("TOTP"), new List<string>() }
-    });
+    c.DocumentFilter<TotpSecurityDocumentFilter>();
 });
 
 // EF Core + SQLite
