@@ -49,9 +49,22 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ClientApp/package-lock.json
 
+      - name: Get build metadata
+        id: vars
+        run: |
+          $shaShort = git rev-parse --short HEAD
+          $buildNumber = git rev-list --count HEAD
+          echo "sha_short=$shaShort" >> $env:GITHUB_OUTPUT
+          echo "build_number=$buildNumber" >> $env:GITHUB_OUTPUT
+
       - name: Install Angular dependencies
         run: npm ci
         working-directory: ClientApp
+
+      - name: Stamp app version into Angular config
+        run: |
+          $file = "ClientApp/src/app/app.config.ts"
+          (Get-Content $file) -replace 'APP_VERSION_PLACEHOLDER', '${{ steps.vars.outputs.build_number }}.0.0-${{ steps.vars.outputs.sha_short }}' | Set-Content $file
 
       - name: Build Angular app
         run: npm run build -- --configuration production
