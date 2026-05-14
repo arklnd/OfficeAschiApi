@@ -51,10 +51,10 @@ public class BookingsController : ControllerBase
 
         var bookingResponses = confirmed.Select(b => new BookingResponse(
             b.Id, b.Date, b.SeatId, b.Seat.Label, b.ReporteeId,
-            b.Reportee.FriendlyName, "Confirmed", b.CreatedAt)).ToList();
+            b.Reportee.FriendlyName, "Confirmed", DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc))).ToList();
 
         var waitlistInfos = waitlisted.Select(b => new WaitlistInfo(
-            b.Id, b.Reportee.FriendlyName, b.Seat.Label, b.CreatedAt)).ToList();
+            b.Id, b.Reportee.FriendlyName, b.Seat.Label, DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc))).ToList();
 
         return Ok(new AvailabilityResponse(
             date,
@@ -138,7 +138,7 @@ public class BookingsController : ControllerBase
         return CreatedAtAction(nameof(Availability), new { teamId = reportee.TeamId, date = request.Date },
             new BookingResponse(booking.Id, booking.Date, booking.SeatId,
                 seat.Label, booking.ReporteeId, reportee.FriendlyName,
-                status.ToString(), booking.CreatedAt));
+                status.ToString(), DateTime.SpecifyKind(booking.CreatedAt, DateTimeKind.Utc)));
     }
 
     /// <summary>
