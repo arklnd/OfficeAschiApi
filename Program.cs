@@ -20,7 +20,9 @@ builder.Services.AddSwaggerGen(c =>
         Name = "Authorization",
         Type = SecuritySchemeType.ApiKey,
         In = ParameterLocation.Header,
-        Description = "TOTP auth. Format: TOTP manager:{teamId}:{code} or TOTP reportee:{reporteeId}:{code}"
+        Description = "Swagger helper: Enter SECRET manager:{teamId}:{base32Secret} or SECRET reportee:{reporteeId}:{base32Secret}\n\n" +
+                      "The SECRET prefix is a Swagger UI convenience — it auto-generates the TOTP code from your secret on each request. " +
+                      "The actual API expects: TOTP manager:{teamId}:{6-digit-code} or TOTP reportee:{reporteeId}:{6-digit-code} (use this format for curl / network calls)."
     };
     c.AddSecurityDefinition("TOTP", totpScheme);
     c.DocumentFilter<TotpSecurityDocumentFilter>();
@@ -54,7 +56,11 @@ using (var scope = app.Services.CreateScope())
 
 // --- Middleware pipeline ---
 app.UseSwagger();
-app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "OfficeAschi API v1"));
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "OfficeAschi API v1");
+    c.InjectJavascript("/swagger-totp.js");
+});
 
 // Serve Angular static files from wwwroot
 app.UseDefaultFiles();
