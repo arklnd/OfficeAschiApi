@@ -41,6 +41,15 @@ else
         opt.UseSqlite("Data Source=officeaschi.db"));
 }
 
+// CORS — allow any origin
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod());
+});
+
 // App services
 builder.Services.AddSingleton<TotpService>();
 builder.Services.AddScoped<WaitlistService>();
@@ -65,6 +74,9 @@ app.UseSwaggerUI(c =>
 // Serve Angular static files from wwwroot
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// CORS
+app.UseCors();
 
 // TOTP auth middleware (before controllers, after routing)
 app.UseMiddleware<TotpAuthMiddleware>();
