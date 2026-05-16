@@ -1,15 +1,17 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace OfficeAschiApi.DTOs;
 
 // --- Team ---
-public record CreateTeamRequest(string? Name, string SecretKey, string TotpCode);
+public record CreateTeamRequest(string? Name, [Required] string SecretKey, [Required] string TotpCode);
 public record TeamResponse(int Id, string Name, bool HasTotpSetup);
 
 // --- Seat ---
-public record AddSeatRequest(string Label);
+public record AddSeatRequest([Required] string Label);
 public record SeatResponse(int Id, string Label, int TeamId);
 
 // --- Reportee ---
-public record JoinTeamRequest(string FriendlyName, string SecretKey, string TotpCode);
+public record JoinTeamRequest([Required] string FriendlyName, [Required] string SecretKey, [Required] string TotpCode);
 public record ReporteeResponse(int Id, string FriendlyName, int TeamId, bool IsApproved, bool HasTotpSetup);
 
 // --- Booking ---
