@@ -33,7 +33,11 @@ var dbType = builder.Configuration["DB_TYPE"] ?? "SQLITE";
 if (dbType.Equals("AZURE_SQL", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddDbContext<AppDbContext>(opt =>
-        opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+        opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
+            sqlOptions => sqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 3,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorNumbersToAdd: null)));
 }
 else
 {
