@@ -90,4 +90,46 @@ public class SeatsController : ControllerBase
 
         return Ok(new { message = "Seat deleted" });
     }
+
+    /// <summary>
+    /// Get all seats across all teams with occupancy status for a given date.
+    /// </summary>
+    /// <param name="date">The date to check (defaults to today).</param>
+    [HttpGet("/api/Seats")]
+    public async Task<ActionResult<List<SeatOverviewResponse>>> GetAll([FromQuery] DateOnly? date)
+    {
+        var targetDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var seats = await _db.Seats
+            .OrderBy(s => s.Team.Name)
+            .ThenBy(s => s.Label)
+            .Select(s => new
+            {
+                s.Id,
+                s.Label,
+                s.TeamId,
+                TeamName = s.Team.Name,
+                ConfirmedBooking = s.Bookings
+                    .Where(b => b.Date == targetDate && b.Status == BookingStatus.Confirmed)
+                    .Select(b => new SeatOverviewBooking(
+                        b.ReporteeId,
+                        b.Reportee.FriendlyName,
+                        b.Id,
+                        b.Status.ToString(),
+                        b.CreatedAt))
+                    .FirstOrDefault()
+            })
+            .ToListAsync();
+
+        var result = seats.Select(s => new SeatOverviewResponse(
+            s.Id,
+            s.Label,
+            s.TeamId,
+            s.TeamName,
+            s.ConfirmedBooking != null,
+            s.ConfirmedBooking
+        )).ToList();
+
+        return Ok(result);
+    }
 }

@@ -35,3 +35,19 @@ public record WaitlistInfo(int BookingId, string ReporteeName, string DesiredSea
 
 // --- Search ---
 public record TeamSearchResult(int Id, string Name, int SeatCount, int MemberCount);
+
+// --- All Seats Overview ---
+public record SeatOverviewBooking(
+    int ReporteeId,
+    string ReporteeName,
+    int BookingId,
+    string Status,
+    DateTime CreatedAt);
+
+public record SeatOverviewResponse(
+    int Id,
+    string Label,
+    int TeamId,
+    string TeamName,
+    bool IsEngaged,
+    SeatOverviewBooking? EngagedBy);
