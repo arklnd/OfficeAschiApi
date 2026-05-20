@@ -40,9 +40,9 @@ bld/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
-# Ignore wwwroot build outputs but keep swagger-totp.js
+# Ignore wwwroot build outputs but keep swagger assets
 wwwroot/*
-!wwwroot/swagger-totp.js
+!wwwroot/swagger-*
 
 # Visual Studio 2017 auto generated files
 Generated\ Files/
