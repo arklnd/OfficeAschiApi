@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using System.Xml.Linq;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Routing;
@@ -38,13 +39,15 @@ public static class ControllerMcpBridge
                 if (httpVerb == null) continue;
 
                 var fullRoute = BuildFullRoute(baseRoute, routeTemplate, controllerName);
-                var description = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description
-                    ?? GetXmlSummary(method)
-                    ?? $"{httpVerb} {fullRoute}";
+                var xmlMember = GetXmlMember(method);
+                var summary = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description
+                    ?? xmlMember?.Element("summary")?.Value.Trim();
+                var responses = GetXmlResponses(xmlMember);
+                var description = BuildToolDescription(summary, httpVerb, fullRoute, responses);
                 var requiresAuth = method.GetCustomAttribute<Middleware.TotpAuthAttribute>() != null;
 
                 var toolName = ToSnakeCase($"{controllerName}_{method.Name}");
-                var parameters = ExtractParameters(method, fullRoute, requiresAuth);
+                var parameters = ExtractParameters(method, fullRoute, requiresAuth, xmlMember);
 
                 var inputSchema = BuildJsonSchema(parameters);
                 var tool = new Tool
@@ -92,7 +95,7 @@ public static class ControllerMcpBridge
         return route;
     }
 
-    internal static List<ToolParameter> ExtractParameters(MethodInfo method, string fullRoute, bool requiresAuth)
+    internal static List<ToolParameter> ExtractParameters(MethodInfo method, string fullRoute, bool requiresAuth, XElement? xmlMember)
     {
         var parameters = new List<ToolParameter>();
 
@@ -110,7 +113,7 @@ public static class ControllerMcpBridge
             if (routeParams.Contains(p.Name!))
             {
                 parameters.Add(new ToolParameter(p.Name!, MapJsonType(p.ParameterType), ToolParameterSource.Route, true,
-                    GetParamDescription(p)));
+                    GetParamDescription(p, xmlMember)));
                 continue;
             }
 
@@ -119,7 +122,7 @@ public static class ControllerMcpBridge
             {
                 var isRequired = !IsNullable(p) && !p.HasDefaultValue;
                 parameters.Add(new ToolParameter(p.Name!, MapJsonType(p.ParameterType), ToolParameterSource.Query, isRequired,
-                    GetParamDescription(p)));
+                    GetParamDescription(p, xmlMember)));
                 continue;
             }
 
@@ -203,9 +206,10 @@ public static class ControllerMcpBridge
         return ctx.Create(p).WriteState == NullabilityState.Nullable;
     }
 
-    private static string? GetParamDescription(ParameterInfo p)
+    private static string? GetParamDescription(ParameterInfo p, XElement? xmlMember)
     {
         return p.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()?.Description
+            ?? GetXmlParamDescription(xmlMember, p.Name!)
             ?? Humanize(p.Name!);
     }
 
@@ -217,20 +221,62 @@ public static class ControllerMcpBridge
 
     private static string? GetXmlSummary(MethodInfo method)
     {
+        return GetXmlMember(method)?.Element("summary")?.Value.Trim();
+    }
+
+    private static XDocument? _cachedXmlDoc;
+    private static string? _cachedXmlPath;
+
+    private static XElement? GetXmlMember(MethodInfo method)
+    {
         var xmlFile = Path.ChangeExtension(method.DeclaringType!.Assembly.Location, ".xml");
         if (!File.Exists(xmlFile)) return null;
         try
         {
-            var doc = System.Xml.Linq.XDocument.Load(xmlFile);
+            if (_cachedXmlDoc == null || _cachedXmlPath != xmlFile)
+            {
+                _cachedXmlDoc = XDocument.Load(xmlFile);
+                _cachedXmlPath = xmlFile;
+            }
             var memberName = $"M:{method.DeclaringType.FullName}.{method.Name}";
-            var member = doc.Descendants("member")
+            return _cachedXmlDoc.Descendants("member")
                 .FirstOrDefault(m => m.Attribute("name")?.Value.StartsWith(memberName) == true);
-            return member?.Element("summary")?.Value.Trim();
         }
         catch
         {
             return null;
         }
+    }
+
+    private static string? GetXmlParamDescription(XElement? xmlMember, string paramName)
+    {
+        return xmlMember?.Elements("param")
+            .FirstOrDefault(e => e.Attribute("name")?.Value == paramName)
+            ?.Value.Trim();
+    }
+
+    private static List<(string code, string description)> GetXmlResponses(XElement? xmlMember)
+    {
+        if (xmlMember == null) return [];
+        return xmlMember.Elements("response")
+            .Select(e => (code: e.Attribute("code")?.Value ?? "", description: e.Value.Trim()))
+            .Where(r => !string.IsNullOrEmpty(r.code))
+            .ToList();
+    }
+
+    private static string BuildToolDescription(string? summary, string httpVerb, string fullRoute,
+        List<(string code, string description)> responses)
+    {
+        var sb = new StringBuilder();
+        sb.Append(summary ?? $"{httpVerb} {fullRoute}");
+
+        if (responses.Count > 0)
+        {
+            sb.Append(" | Responses: ");
+            sb.Append(string.Join("; ", responses.Select(r => $"{r.code}: {r.description}")));
+        }
+
+        return sb.ToString();
     }
 
     private static string Humanize(string pascalCase)
