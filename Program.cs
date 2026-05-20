@@ -64,7 +64,7 @@ builder.Services.AddScoped<WaitlistService>();
 builder.Services.AddToolsFromControllers();
 builder.Services
     .AddMcpServer()
-    .WithHttpTransport();
+    .WithHttpTransport(options => options.Stateless = true);
 
 var app = builder.Build();
 
