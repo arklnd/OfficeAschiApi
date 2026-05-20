@@ -17,6 +17,9 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "OfficeAschi API", Version = "v1" });
+    var xmlFile = Path.Combine(AppContext.BaseDirectory, "OfficeAschiApi.xml");
+    if (File.Exists(xmlFile))
+        c.IncludeXmlComments(xmlFile);
     var totpScheme = new OpenApiSecurityScheme
     {
         Name = "Authorization",
@@ -80,6 +83,7 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "OfficeAschi API v1");
+    c.InjectStylesheet("/swagger-custom.css");
     c.InjectJavascript("/swagger-totp.js");
 });
 
