@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using ModelContextProtocol.AspNetCore;
 using OfficeAschiApi.Data;
+using OfficeAschiApi.McpBridge;
 using OfficeAschiApi.Middleware;
 using OfficeAschiApi.Services;
 
@@ -58,6 +60,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<TotpService>();
 builder.Services.AddScoped<WaitlistService>();
 
+// MCP server — auto-discover tools from API controllers
+builder.Services.AddToolsFromControllers();
+builder.Services
+    .AddMcpServer()
+    .WithHttpTransport();
+
 var app = builder.Build();
 
 // --- Auto-migrate on startup ---
@@ -86,6 +94,8 @@ app.UseCors();
 app.UseMiddleware<TotpAuthMiddleware>();
 
 app.MapControllers();
+
+app.MapMcp("/mcp");
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
