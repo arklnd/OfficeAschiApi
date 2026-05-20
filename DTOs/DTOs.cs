@@ -33,6 +33,42 @@ public record AvailabilityResponse(
 
 public record WaitlistInfo(int BookingId, string ReporteeName, string DesiredSeatLabel, DateTime WaitlistedSince);
 
+// --- Date-range availability ---
+public record DateAvailabilitySummary(
+    DateOnly Date,
+    int TotalSeats,
+    int BookedCount,
+    int AvailableCount,
+    int WaitlistedCount);
+
+public record RangeAvailabilityResponse(
+    int TeamId,
+    DateOnly From,
+    DateOnly To,
+    List<DateAvailabilitySummary> Days);
+
+// --- Date-range booking ---
+public record BookSeatRangeRequest(int ReporteeId, int SeatId, DateOnly From, DateOnly To);
+
+public record RangeBookingResult(
+    DateOnly Date,
+    bool Success,
+    string Status,
+    int? BookingId,
+    string? Error);
+
+public record RangeBookingResponse(
+    int SeatId,
+    string SeatLabel,
+    int ReporteeId,
+    string ReporteeName,
+    DateOnly From,
+    DateOnly To,
+    int ConfirmedCount,
+    int WaitlistedCount,
+    int FailedCount,
+    List<RangeBookingResult> Results);
+
 // --- Search ---
 public record TeamSearchResult(int Id, string Name, int SeatCount, int MemberCount);
 
