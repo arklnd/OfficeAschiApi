@@ -24,7 +24,13 @@ public class BookingsController : ControllerBase
     /// <summary>
     /// Get availability for a team on a date (public)
     /// </summary>
+    /// <param name="teamId">The ID of the team to check availability for.</param>
+    /// <param name="date">The date to check availability on.</param>
+    /// <response code="200">Returns seat availability, confirmed bookings, and waitlist info.</response>
+    /// <response code="404">Team not found.</response>
     [HttpGet("availability/{teamId}")]
+    [ProducesResponseType(typeof(AvailabilityResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<AvailabilityResponse>> Availability(int teamId, [FromQuery] DateOnly date)
     {
         if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
@@ -72,7 +78,18 @@ public class BookingsController : ControllerBase
     /// If the seat is already taken, the booking becomes waitlisted for that seat.
     /// Authorization: TOTP reportee:{reporteeId}:{code}
     /// </summary>
+    /// <param name="request">The booking details including reportee ID, seat ID, and date.</param>
+    /// <response code="201">Booking created (confirmed or waitlisted).</response>
+    /// <response code="400">Reportee not approved, seat belongs to another team, or specific seat taken with others available.</response>
+    /// <response code="403">TOTP auth does not match the reportee.</response>
+    /// <response code="404">Reportee or seat not found.</response>
+    /// <response code="409">Reportee already has a booking for this date.</response>
     [HttpPost]
+    [ProducesResponseType(typeof(BookingResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [TotpAuth]
     public async Task<ActionResult<BookingResponse>> Book([FromBody] BookSeatRequest request)
     {
@@ -146,7 +163,14 @@ public class BookingsController : ControllerBase
     /// When a confirmed booking is cancelled, waitlisted candidates are auto-promoted.
     /// Authorization: TOTP reportee:{reporteeId}:{code}
     /// </summary>
+    /// <param name="id">The booking ID to cancel.</param>
+    /// <response code="200">Booking cancelled successfully. Indicates if a waitlisted entry was promoted.</response>
+    /// <response code="403">TOTP auth does not match the booking's reportee.</response>
+    /// <response code="404">Booking not found.</response>
     [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [TotpAuth]
     public async Task<ActionResult> Cancel(int id)
     {

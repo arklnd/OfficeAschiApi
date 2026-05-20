@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OfficeAschiApi.Data;
+using OfficeAschiApi.DTOs;
 using OfficeAschiApi.Services;
 
 namespace OfficeAschiApi.Controllers;
@@ -24,7 +25,12 @@ public class TotpController : ControllerBase
     /// <summary>
     /// Verify a TOTP code against the server-stored secret (no browser secret needed).
     /// </summary>
+    /// <param name="request">Entity type (manager or reportee), entity ID, and the 6-digit TOTP code.</param>
+    /// <response code="200">Returns whether the TOTP code is valid.</response>
+    /// <response code="400">Invalid entity type.</response>
     [HttpPost("verify")]
+    [ProducesResponseType(typeof(TotpVerifyResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<TotpVerifyResponse>> Verify([FromBody] TotpVerifyRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Code) || request.Code.Length != 6)

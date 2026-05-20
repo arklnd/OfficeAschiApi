@@ -24,7 +24,10 @@ public class TeamsController : ControllerBase
     /// <summary>
     /// Search/list teams (public)
     /// </summary>
+    /// <param name="q">Optional search query to filter teams by name.</param>
+    /// <response code="200">Returns matching teams with seat and member counts.</response>
     [HttpGet]
+    [ProducesResponseType(typeof(List<TeamSearchResult>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<TeamSearchResult>>> Search([FromQuery] string? q)
     {
         var query = _db.Teams.AsQueryable();
@@ -45,7 +48,12 @@ public class TeamsController : ControllerBase
     /// <summary>
     /// Get team details (public)
     /// </summary>
+    /// <param name="id">The team ID.</param>
+    /// <response code="200">Returns team details.</response>
+    /// <response code="404">Team not found.</response>
     [HttpGet("{id}")]
+    [ProducesResponseType(typeof(TeamResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TeamResponse>> GetById(int id)
     {
         var team = await _db.Teams.FindAsync(id);
@@ -57,7 +65,14 @@ public class TeamsController : ControllerBase
     /// Create a new team with TOTP setup (atomic).
     /// Client provides a secret key + TOTP code; if valid, both team and TOTP are created together.
     /// </summary>
+    /// <param name="request">Team name (optional), secret key, and TOTP code.</param>
+    /// <response code="201">Team created successfully.</response>
+    /// <response code="400">Missing secret key / TOTP code, or invalid TOTP code.</response>
+    /// <response code="409">Team name already taken.</response>
     [HttpPost]
+    [ProducesResponseType(typeof(TeamResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<TeamResponse>> Create([FromBody] CreateTeamRequest request)
     {
         // Validate TOTP first — fail fast before creating anything
@@ -93,7 +108,14 @@ public class TeamsController : ControllerBase
     /// Delete a team and all its members, seats, and bookings (manager TOTP required).
     /// Authorization: TOTP manager:{teamId}:{code}
     /// </summary>
+    /// <param name="id">The team ID to delete.</param>
+    /// <response code="200">Team deleted. Returns counts of removed bookings, members, and seats.</response>
+    /// <response code="403">TOTP auth does not match the team manager.</response>
+    /// <response code="404">Team not found.</response>
     [HttpDelete("{id}")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     [TotpAuth]
     public async Task<ActionResult> Delete(int id)
     {
