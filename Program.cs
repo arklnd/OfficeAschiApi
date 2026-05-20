@@ -66,7 +66,11 @@ builder.Services.AddScoped<WaitlistService>();
 // MCP server — auto-discover tools from API controllers
 builder.Services.AddToolsFromControllers();
 builder.Services
-    .AddMcpServer()
+    .AddMcpServer(options =>
+    {
+        var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+        options.ServerInfo = new() { Name = "OfficeAschi", Version = version };
+    })
     .WithHttpTransport(options => options.Stateless = true);
 
 var app = builder.Build();

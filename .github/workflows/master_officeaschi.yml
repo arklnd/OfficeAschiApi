@@ -94,7 +94,7 @@ jobs:
           dotnet-version: '10.x'
 
       - name: dotnet publish
-        run: dotnet publish OfficeAschiApi.csproj -c Release -o "${{env.DOTNET_ROOT}}/myapp"
+        run: dotnet publish OfficeAschiApi.csproj -c Release -o "${{env.DOTNET_ROOT}}/myapp" /p:Version=${{ steps.vars.outputs.build_number }}.0.0-${{ steps.vars.outputs.sha_short }}
 
       - name: Install Azure CLI
         run: |
