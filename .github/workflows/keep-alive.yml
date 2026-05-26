@@ -13,18 +13,25 @@ jobs:
       - name: Ping OfficeAschi API
         run: |
           echo "Pinging OfficeAschi to keep Azure SQL DB awake..."
-          EPOCH=$(date +%s)
-          RESPONSE=$(curl -s -w "\n%{http_code}" "https://officeaschi.azurewebsites.net/api/Teams?q=$EPOCH")
-          STATUS=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-          echo "Response status: $STATUS"
-          echo "Response body: $BODY"
-          if [ "$STATUS" != "200" ]; then
-            echo "::error::Expected 200 but got $STATUS"
-            exit 1
-          fi
-          if [ "$BODY" != "[]" ]; then
-            echo "::error::Expected empty array [] but got: $BODY"
-            exit 1
-          fi
-          echo "Ping successful - got 200 with empty array"
+          MAX_RETRIES=5
+          RETRY_DELAY=60
+          for ATTEMPT in $(seq 1 $MAX_RETRIES); do
+            echo "Attempt $ATTEMPT of $MAX_RETRIES"
+            EPOCH=$(date +%s)
+            RESPONSE=$(curl -s -w "\n%{http_code}" "https://officeaschi.azurewebsites.net/api/Teams?q=$EPOCH")
+            STATUS=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+            echo "Response status: $STATUS"
+            echo "Response body: $BODY"
+            if [ "$STATUS" = "200" ] && [ "$BODY" = "[]" ]; then
+              echo "Ping successful - got 200 with empty array"
+              exit 0
+            fi
+            echo "::warning::Attempt $ATTEMPT failed (status=$STATUS)"
+            if [ "$ATTEMPT" -lt "$MAX_RETRIES" ]; then
+              echo "Retrying in ${RETRY_DELAY}s..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          echo "::error::All $MAX_RETRIES attempts failed"
+          exit 1
