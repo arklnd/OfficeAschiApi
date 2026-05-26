@@ -13,10 +13,18 @@ jobs:
       - name: Ping OfficeAschi API
         run: |
           echo "Pinging OfficeAschi to keep Azure SQL DB awake..."
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://officeaschi.azurewebsites.net/api/teams/search?q=ping)
+          EPOCH=$(date +%s)
+          RESPONSE=$(curl -s -w "\n%{http_code}" "https://officeaschi.azurewebsites.net/api/Teams?q=$EPOCH")
+          STATUS=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
           echo "Response status: $STATUS"
-          if [ "$STATUS" -ge 500 ]; then
-            echo "::warning::Server returned $STATUS"
+          echo "Response body: $BODY"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Expected 200 but got $STATUS"
             exit 1
           fi
-          echo "Ping successful"
+          if [ "$BODY" != "[]" ]; then
+            echo "::error::Expected empty array [] but got: $BODY"
+            exit 1
+          fi
+          echo "Ping successful - got 200 with empty array"
