@@ -40,9 +40,10 @@ if (dbType.Equals("AZURE_SQL", StringComparison.OrdinalIgnoreCase))
     builder.Services.AddDbContext<AppDbContext>(opt =>
         opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
             sqlOptions => sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 3,
-                maxRetryDelay: TimeSpan.FromSeconds(10),
+                maxRetryCount: 6,
+                maxRetryDelay: TimeSpan.FromSeconds(30),
                 errorNumbersToAdd: null)));
+    builder.Services.AddHostedService<DbKeepAliveService>();
 }
 else
 {
