@@ -1,0 +1,22 @@
+name: Keep Azure DB Alive
+
+on:
+  schedule:
+    # Runs every 30 minutes from 6:00 AM IST (0:30 UTC) to 11:30 PM IST (18:00 UTC), weekdays
+    - cron: '*/30 0-18 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping OfficeAschi API
+        run: |
+          echo "Pinging OfficeAschi to keep Azure SQL DB awake..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://officeaschi.azurewebsites.net/api/teams/search?q=ping)
+          echo "Response status: $STATUS"
+          if [ "$STATUS" -ge 500 ]; then
+            echo "::warning::Server returned $STATUS"
+            exit 1
+          fi
+          echo "Ping successful"
