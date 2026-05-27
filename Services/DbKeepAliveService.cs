@@ -3,7 +3,7 @@ using OfficeAschiApi.Data;
 
 namespace OfficeAschiApi.Services;
 
-public class DbKeepAliveService(IServiceScopeFactory scopeFactory, ILogger<DbKeepAliveService> logger) : BackgroundService
+public class DbKeepAliveService(IServiceScopeFactory scopeFactory, IConfiguration config, ILogger<DbKeepAliveService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(45);
 
@@ -12,6 +12,11 @@ public class DbKeepAliveService(IServiceScopeFactory scopeFactory, ILogger<DbKee
         while (!stoppingToken.IsCancellationRequested)
         {
             await Task.Delay(Interval, stoppingToken);
+            if (!config.GetValue("DB_KEEP_ALIVE", true))
+            {
+                logger.LogDebug("DB keep-alive disabled via config");
+                continue;
+            }
             try
             {
                 using var scope = scopeFactory.CreateScope();
