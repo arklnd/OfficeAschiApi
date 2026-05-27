@@ -2,3 +2,22 @@
     color: #727272 !important;
     font-weight: 600;
 }
+
+/* Replace default Swagger logo with Hyland logo */
+.swagger-ui .topbar .link img,
+.swagger-ui .topbar .link svg {
+    display: none;
+}
+
+.swagger-ui .topbar .link {
+    display: flex;
+    align-items: center;
+}
+
+.swagger-ui .topbar .link::before {
+    content: '';
+    display: inline-block;
+    width: 160px;
+    height: 34px;
+    background: url('/hyland_logo.svg') no-repeat center / contain;
+}
