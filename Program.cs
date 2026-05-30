@@ -107,6 +107,9 @@ app.UseStaticFiles();
 // CORS
 app.UseCors();
 
+// Block API requests until cache is warmed up from DB
+app.UseMiddleware<CacheWarmupMiddleware>();
+
 // TOTP auth middleware (before controllers, after routing)
 app.UseMiddleware<TotpAuthMiddleware>();
 

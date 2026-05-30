@@ -21,25 +21,54 @@ public sealed class CacheWarmupService : IHostedService, IDisposable
         _logger = logger;
     }
 
+    private const int MaxRetries = 5;
+    private static readonly int[] RetryDelaysSeconds = [2, 4, 8, 16, 32];
+
     public async Task StartAsync(CancellationToken ct)
     {
-        using var scope = _services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // Fire-and-forget so the app starts accepting requests immediately.
+        // Reads return empty results until warmup completes (IsWarmedUp guard).
+        _ = Task.Run(() => WarmUpWithRetryAsync(ct), ct);
+    }
 
-        var teams = await db.Teams.AsNoTracking().ToListAsync(ct);
-        var seats = await db.Seats.AsNoTracking().ToListAsync(ct);
-        var reportees = await db.Reportees.AsNoTracking().ToListAsync(ct);
-        var bookings = await db.Bookings.AsNoTracking().ToListAsync(ct);
+    private async Task WarmUpWithRetryAsync(CancellationToken ct)
+    {
+        for (var attempt = 0; attempt <= MaxRetries; attempt++)
+        {
+            try
+            {
+                using var scope = _services.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        _cache.WarmUp(teams, seats, reportees, bookings);
+                var teams = await db.Teams.AsNoTracking().ToListAsync(ct);
+                var seats = await db.Seats.AsNoTracking().ToListAsync(ct);
+                var reportees = await db.Reportees.AsNoTracking().ToListAsync(ct);
+                var bookings = await db.Bookings.AsNoTracking().ToListAsync(ct);
 
-        var c = _cache.Counts;
-        _logger.LogInformation(
-            "Write-through cache warmed: {Teams} teams, {Seats} seats, {Reportees} reportees, {Bookings} bookings",
-            c.Teams, c.Seats, c.Reportees, c.Bookings);
+                _cache.WarmUp(teams, seats, reportees, bookings);
 
-        // Prune bookings older than 90 days — run once after 1 hour, then every 24 hours
-        _pruneTimer = new Timer(PruneOldBookings, null, TimeSpan.FromHours(1), TimeSpan.FromHours(24));
+                var c = _cache.Counts;
+                _logger.LogInformation(
+                    "Write-through cache warmed: {Teams} teams, {Seats} seats, {Reportees} reportees, {Bookings} bookings",
+                    c.Teams, c.Seats, c.Reportees, c.Bookings);
+
+                // Prune bookings older than 90 days — run once after 1 hour, then every 24 hours
+                _pruneTimer = new Timer(PruneOldBookings, null, TimeSpan.FromHours(1), TimeSpan.FromHours(24));
+                return;
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                if (attempt == MaxRetries)
+                {
+                    _logger.LogCritical(ex, "Cache warmup failed after {Retries} retries — app will serve from DB only", MaxRetries);
+                    return;
+                }
+
+                var delay = RetryDelaysSeconds[attempt];
+                _logger.LogWarning(ex, "Cache warmup attempt {Attempt} failed, retrying in {Delay}s", attempt + 1, delay);
+                await Task.Delay(TimeSpan.FromSeconds(delay), ct);
+            }
+        }
     }
 
     private void PruneOldBookings(object? state)
