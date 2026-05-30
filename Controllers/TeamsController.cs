@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using OfficeAschiApi.Caching;
 using OfficeAschiApi.Data;
 using OfficeAschiApi.DTOs;
 using OfficeAschiApi.Middleware;
@@ -16,12 +17,14 @@ public class TeamsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly TotpService _totpService;
     private readonly IOutputCacheStore _cache;
+    private readonly WriteThroughCache _writeThroughCache;
 
-    public TeamsController(AppDbContext db, TotpService totpService, IOutputCacheStore cache)
+    public TeamsController(AppDbContext db, TotpService totpService, IOutputCacheStore cache, WriteThroughCache writeThroughCache)
     {
         _db = db;
         _totpService = totpService;
         _cache = cache;
+        _writeThroughCache = writeThroughCache;
     }
 
     /// <summary>
@@ -30,21 +33,20 @@ public class TeamsController : ControllerBase
     /// <param name="q">Optional search query to filter teams by name.</param>
     /// <response code="200">Returns matching teams with seat and member counts.</response>
     [HttpGet]
-    [OutputCache(PolicyName = "StaticData", Tags = new[] { "teams" })]
+    [OutputCache(PolicyName = "TeamsList")]
     [ProducesResponseType(typeof(List<TeamSearchResult>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<TeamSearchResult>>> Search([FromQuery] string? q)
+    public ActionResult<List<TeamSearchResult>> Search([FromQuery] string? q)
     {
-        var query = _db.Teams.AsQueryable();
+        var allTeams = _writeThroughCache.GetAllTeams();
+        IEnumerable<Team> filtered = allTeams;
         if (!string.IsNullOrWhiteSpace(q))
-            query = query.Where(t => t.Name.Contains(q));
+            filtered = allTeams.Where(t => t.Name.Contains(q, StringComparison.OrdinalIgnoreCase));
 
-        var teams = await query
-            .Select(t => new TeamSearchResult(
-                t.Id,
-                t.Name,
-                t.Seats.Count,
-                t.Reportees.Count(r => r.IsApproved)))
-            .ToListAsync();
+        var teams = filtered.Select(t => new TeamSearchResult(
+            t.Id, t.Name,
+            _writeThroughCache.GetSeatCount(t.Id),
+            _writeThroughCache.GetApprovedReporteeCount(t.Id)))
+            .ToList();
 
         return Ok(teams);
     }
@@ -56,12 +58,12 @@ public class TeamsController : ControllerBase
     /// <response code="200">Returns team details.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet("{id}")]
-    [OutputCache(PolicyName = "StaticData", Tags = new[] { "teams" })]
+    [OutputCache(PolicyName = "TeamScoped")]
     [ProducesResponseType(typeof(TeamResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<TeamResponse>> GetById(int id)
+    public ActionResult<TeamResponse> GetById(int id)
     {
-        var team = await _db.Teams.FindAsync(id);
+        var team = _writeThroughCache.GetTeam(id);
         if (team == null) return NotFound(new { error = "Team not found" });
         return Ok(new TeamResponse(team.Id, team.Name, team.ManagerTotpSecret != null));
     }
@@ -88,7 +90,7 @@ public class TeamsController : ControllerBase
         if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
             return BadRequest(new { error = "TOTP code does not match the secret key. Try again." });
 
-        if (!string.IsNullOrWhiteSpace(request.Name) && await _db.Teams.AnyAsync(t => t.Name == request.Name))
+        if (!string.IsNullOrWhiteSpace(request.Name) && _writeThroughCache.GetAllTeams().Any(t => t.Name == request.Name))
             return Conflict(new { error = "Team name already taken" });
 
         var team = new Team { ManagerTotpSecret = request.SecretKey };
@@ -106,8 +108,7 @@ public class TeamsController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
-        await _cache.EvictByTagAsync("teams", default);
-        await _cache.EvictByTagAsync("static", default);
+        await _cache.EvictByTagAsync("teams-list", default);
 
         return CreatedAtAction(nameof(GetById), new { id = team.Id },
             new TeamResponse(team.Id, team.Name, true));
@@ -134,8 +135,8 @@ public class TeamsController : ControllerBase
         if (authType != "manager" || authId != id)
             return Forbid();
 
-        var team = await _db.Teams.FindAsync(id);
-        if (team == null) return NotFound(new { error = "Team not found" });
+        if (!_writeThroughCache.TeamExists(id))
+            return NotFound(new { error = "Team not found" });
 
         // Delete all bookings for this team first (FK restrict)
         var bookings = await _db.Bookings.Where(b => b.TeamId == id).ToListAsync();
@@ -150,14 +151,15 @@ public class TeamsController : ControllerBase
         _db.Seats.RemoveRange(seats);
 
         // Delete the team
-        _db.Teams.Remove(team);
+        var team = await _db.Teams.FindAsync(id);
+        _db.Teams.Remove(team!);
 
         await _db.SaveChangesAsync();
 
-        // Evict all related caches — team deletion affects everything
-        await _cache.EvictByTagAsync("teams", default);
-        await _cache.EvictByTagAsync("static", default);
-        await _cache.EvictByTagAsync("availability", default);
+        // Evict output cache
+        await _cache.EvictByTagAsync($"team-{id}", default);
+        await _cache.EvictByTagAsync("teams-list", default);
+        await _cache.EvictByTagAsync("seats-overview", default);
 
         return Ok(new { message = "Team deleted", bookingsRemoved = bookings.Count, membersRemoved = reportees.Count, seatsRemoved = seats.Count });
     }

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using OfficeAschiApi.Caching;
 using OfficeAschiApi.Data;
 using OfficeAschiApi.DTOs;
 using OfficeAschiApi.Middleware;
@@ -17,13 +18,16 @@ public class ReporteesController : ControllerBase
     private readonly TotpService _totpService;
     private readonly WaitlistService _waitlistService;
     private readonly IOutputCacheStore _cache;
+    private readonly WriteThroughCache _writeThroughCache;
 
-    public ReporteesController(AppDbContext db, TotpService totpService, WaitlistService waitlistService, IOutputCacheStore cache)
+    public ReporteesController(AppDbContext db, TotpService totpService, WaitlistService waitlistService,
+        IOutputCacheStore cache, WriteThroughCache writeThroughCache)
     {
         _db = db;
         _totpService = totpService;
         _waitlistService = waitlistService;
         _cache = cache;
+        _writeThroughCache = writeThroughCache;
     }
 
     /// <summary>
@@ -33,18 +37,17 @@ public class ReporteesController : ControllerBase
     /// <response code="200">Returns the list of reportees in the team.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet]
-    [OutputCache(PolicyName = "StaticData", Tags = new[] { "reportees" })]
+    [OutputCache(PolicyName = "TeamScoped")]
     [ProducesResponseType(typeof(List<ReporteeResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<List<ReporteeResponse>>> List(int teamId)
+    public ActionResult<List<ReporteeResponse>> List(int teamId)
     {
-        if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
+        if (!_writeThroughCache.TeamExists(teamId))
             return NotFound(new { error = "Team not found" });
 
-        var reportees = await _db.Reportees
-            .Where(r => r.TeamId == teamId)
+        var reportees = _writeThroughCache.GetReporteesByTeam(teamId)
             .Select(r => new ReporteeResponse(r.Id, r.FriendlyName, r.TeamId, r.IsApproved, r.TotpSecret != null))
-            .ToListAsync();
+            .ToList();
 
         return Ok(reportees);
     }
@@ -74,13 +77,13 @@ public class ReporteesController : ControllerBase
         if (!_totpService.ValidateTotp(request.SecretKey, request.TotpCode))
             return BadRequest(new { error = "TOTP code does not match the secret key. Try again." });
 
-        if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
+        if (!_writeThroughCache.TeamExists(teamId))
             return NotFound(new { error = "Team not found" });
 
         if (string.IsNullOrWhiteSpace(request.FriendlyName))
             return BadRequest(new { error = "Friendly name is required" });
 
-        if (await _db.Reportees.AnyAsync(r => r.TeamId == teamId && r.FriendlyName == request.FriendlyName))
+        if (_writeThroughCache.GetReporteesByTeam(teamId).Any(r => r.FriendlyName == request.FriendlyName))
             return Conflict(new { error = "Name already taken in this team" });
 
         var reportee = new Reportee
@@ -94,7 +97,7 @@ public class ReporteesController : ControllerBase
         _db.Reportees.Add(reportee);
         await _db.SaveChangesAsync();
 
-        await EvictReporteeCaches();
+        await EvictReporteeOutputCache(teamId);
 
         return CreatedAtAction(nameof(List), new { teamId },
             new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, false, true));
@@ -133,7 +136,7 @@ public class ReporteesController : ControllerBase
         reportee.IsApproved = true;
         await _db.SaveChangesAsync();
 
-        await EvictReporteeCaches();
+        await EvictReporteeOutputCache(teamId);
 
         return Ok(new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, true, reportee.TotpSecret != null));
     }
@@ -176,7 +179,7 @@ public class ReporteesController : ControllerBase
         _db.Reportees.Remove(reportee);
         await _db.SaveChangesAsync();
 
-        await EvictReporteeCaches();
+        await EvictReporteeOutputCache(teamId);
 
         return Ok(new { message = "Join request denied", reportee = reportee.FriendlyName });
     }
@@ -221,12 +224,12 @@ public class ReporteesController : ControllerBase
             await _waitlistService.PromoteWaitlistAsync(teamId, cb.SeatId, cb.Date);
         }
 
-        // Remove the reportee
         _db.Reportees.Remove(reportee);
         await _db.SaveChangesAsync();
 
-        await EvictReporteeCaches();
-        await _cache.EvictByTagAsync("availability", default);
+        // WaitlistService.PromoteWaitlistAsync updates cache internally via interceptor
+        await EvictReporteeOutputCache(teamId);
+        await _cache.EvictByTagAsync("seats-overview", default);
 
         return Ok(new
         {
@@ -238,9 +241,9 @@ public class ReporteesController : ControllerBase
         });
     }
 
-    private async Task EvictReporteeCaches()
+    private async Task EvictReporteeOutputCache(int teamId)
     {
-        await _cache.EvictByTagAsync("reportees", default);
-        await _cache.EvictByTagAsync("static", default);
+        await _cache.EvictByTagAsync($"team-{teamId}", default);
+        await _cache.EvictByTagAsync("teams-list", default);
     }
 }

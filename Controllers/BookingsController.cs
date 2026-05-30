@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using OfficeAschiApi.Caching;
 using OfficeAschiApi.Data;
 using OfficeAschiApi.DTOs;
 using OfficeAschiApi.Middleware;
@@ -16,12 +17,15 @@ public class BookingsController : ControllerBase
     private readonly AppDbContext _db;
     private readonly WaitlistService _waitlistService;
     private readonly IOutputCacheStore _cache;
+    private readonly WriteThroughCache _writeThroughCache;
 
-    public BookingsController(AppDbContext db, WaitlistService waitlistService, IOutputCacheStore cache)
+    public BookingsController(AppDbContext db, WaitlistService waitlistService,
+        IOutputCacheStore cache, WriteThroughCache writeThroughCache)
     {
         _db = db;
         _waitlistService = waitlistService;
         _cache = cache;
+        _writeThroughCache = writeThroughCache;
     }
 
     /// <summary>
@@ -35,20 +39,16 @@ public class BookingsController : ControllerBase
     [OutputCache(PolicyName = "Availability")]
     [ProducesResponseType(typeof(AvailabilityResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<AvailabilityResponse>> Availability(int teamId, [FromQuery] DateOnly date)
+    public ActionResult<AvailabilityResponse> Availability(int teamId, [FromQuery] DateOnly date)
     {
-        if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
+        if (!_writeThroughCache.TeamExists(teamId))
             return NotFound(new { error = "Team not found" });
 
-        var allSeats = await _db.Seats.Where(s => s.TeamId == teamId).ToListAsync();
-        var allSeatIds = allSeats.Select(s => s.Id).ToHashSet();
+        var allSeats = _writeThroughCache.GetSeatsByTeam(teamId);
 
-        var bookings = await _db.Bookings
-            .Include(b => b.Seat)
-            .Include(b => b.Reportee)
-            .Where(b => b.TeamId == teamId && b.Date == date)
+        var bookings = _writeThroughCache.GetBookingsByTeamAndDate(teamId, date)
             .OrderBy(b => b.CreatedAt)
-            .ToListAsync();
+            .ToList();
 
         var confirmed = bookings.Where(b => b.Status == BookingStatus.Confirmed).ToList();
         var waitlisted = bookings.Where(b => b.Status == BookingStatus.Waitlisted).ToList();
@@ -59,12 +59,24 @@ public class BookingsController : ControllerBase
             .Select(s => new SeatResponse(s.Id, s.Label, s.TeamId))
             .ToList();
 
-        var bookingResponses = confirmed.Select(b => new BookingResponse(
-            b.Id, b.Date, b.SeatId, b.Seat.Label, b.ReporteeId,
-            b.Reportee.FriendlyName, "Confirmed", DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc))).ToList();
+        var bookingResponses = confirmed.Select(b =>
+        {
+            var seat = _writeThroughCache.GetSeat(b.SeatId);
+            var reportee = _writeThroughCache.GetReportee(b.ReporteeId);
+            return new BookingResponse(
+                b.Id, b.Date, b.SeatId, seat?.Label ?? "", b.ReporteeId,
+                reportee?.FriendlyName ?? "", "Confirmed",
+                DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc));
+        }).ToList();
 
-        var waitlistInfos = waitlisted.Select(b => new WaitlistInfo(
-            b.Id, b.Reportee.FriendlyName, b.Seat.Label, DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc))).ToList();
+        var waitlistInfos = waitlisted.Select(b =>
+        {
+            var seat = _writeThroughCache.GetSeat(b.SeatId);
+            var reportee = _writeThroughCache.GetReportee(b.ReporteeId);
+            return new WaitlistInfo(
+                b.Id, reportee?.FriendlyName ?? "", seat?.Label ?? "",
+                DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc));
+        }).ToList();
 
         return Ok(new AvailabilityResponse(
             date,
@@ -92,7 +104,7 @@ public class BookingsController : ControllerBase
     [ProducesResponseType(typeof(RangeAvailabilityResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<RangeAvailabilityResponse>> AvailabilityRange(
+    public ActionResult<RangeAvailabilityResponse> AvailabilityRange(
         int teamId, [FromQuery] DateOnly from, [FromQuery] DateOnly to)
     {
         if (to < from)
@@ -100,36 +112,18 @@ public class BookingsController : ControllerBase
         if (to.DayNumber - from.DayNumber > 90)
             return BadRequest(new { error = "Date range cannot exceed 90 days" });
 
-        if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
+        if (!_writeThroughCache.TeamExists(teamId))
             return NotFound(new { error = "Team not found" });
 
-        var totalSeats = await _db.Seats.CountAsync(s => s.TeamId == teamId);
-
-        var bookings = await _db.Bookings
-            .Where(b => b.TeamId == teamId && b.Date >= from && b.Date <= to)
-            .GroupBy(b => b.Date)
-            .Select(g => new
-            {
-                Date = g.Key,
-                Confirmed = g.Count(b => b.Status == BookingStatus.Confirmed),
-                Waitlisted = g.Count(b => b.Status == BookingStatus.Waitlisted)
-            })
-            .ToListAsync();
-
-        var bookingsByDate = bookings.ToDictionary(b => b.Date);
+        var totalSeats = _writeThroughCache.GetSeatCount(teamId);
 
         var days = new List<DateAvailabilitySummary>();
         for (var d = from; d <= to; d = d.AddDays(1))
         {
-            if (bookingsByDate.TryGetValue(d, out var b))
-            {
-                days.Add(new DateAvailabilitySummary(d, totalSeats, b.Confirmed,
-                    totalSeats - b.Confirmed, b.Waitlisted));
-            }
-            else
-            {
-                days.Add(new DateAvailabilitySummary(d, totalSeats, 0, totalSeats, 0));
-            }
+            var dayBookings = _writeThroughCache.GetBookingsByTeamAndDate(teamId, d);
+            var confirmed = dayBookings.Count(b => b.Status == BookingStatus.Confirmed);
+            var waitlisted = dayBookings.Count(b => b.Status == BookingStatus.Waitlisted);
+            days.Add(new DateAvailabilitySummary(d, totalSeats, confirmed, totalSeats - confirmed, waitlisted));
         }
 
         return Ok(new RangeAvailabilityResponse(teamId, from, to, days));
@@ -164,35 +158,31 @@ public class BookingsController : ControllerBase
         if (authType != "reportee" || authId != request.ReporteeId)
             return Forbid();
 
-        var reportee = await _db.Reportees.FindAsync(request.ReporteeId);
+        var reportee = _writeThroughCache.GetReportee(request.ReporteeId);
         if (reportee == null) return NotFound(new { error = "Reportee not found" });
         if (!reportee.IsApproved) return BadRequest(new { error = "Reportee not approved by manager yet" });
 
-        var seat = await _db.Seats.FindAsync(request.SeatId);
+        var seat = _writeThroughCache.GetSeat(request.SeatId);
         if (seat == null) return NotFound(new { error = "Seat not found" });
         if (seat.TeamId != reportee.TeamId)
             return BadRequest(new { error = "Seat does not belong to your team" });
 
-        var totalSeats = await _db.Seats.CountAsync(s => s.TeamId == reportee.TeamId);
+        var totalSeats = _writeThroughCache.GetSeatCount(reportee.TeamId);
 
-        // Fetch existing bookings for the reportee and seat in the date range in bulk
-        var existingReporteeBookings = await _db.Bookings
-            .Where(b => b.ReporteeId == request.ReporteeId && b.Date >= request.From && b.Date <= request.To)
+        // Build lookup sets from cache
+        var existingReporteeBookings = _writeThroughCache.GetBookingsByReportee(request.ReporteeId)
+            .Where(b => b.Date >= request.From && b.Date <= request.To)
             .Select(b => b.Date)
-            .ToHashSetAsync();
+            .ToHashSet();
 
-        var confirmedSeatDates = await _db.Bookings
-            .Where(b => b.SeatId == request.SeatId && b.Date >= request.From && b.Date <= request.To
-                && b.Status == BookingStatus.Confirmed)
+        var confirmedSeatDates = _writeThroughCache.GetBookingsByTeamInRange(reportee.TeamId, request.From, request.To)
+            .Where(b => b.SeatId == request.SeatId && b.Status == BookingStatus.Confirmed)
             .Select(b => b.Date)
-            .ToHashSetAsync();
+            .ToHashSet();
 
-        var confirmedTeamCounts = await _db.Bookings
-            .Where(b => b.TeamId == reportee.TeamId && b.Date >= request.From && b.Date <= request.To
-                && b.Status == BookingStatus.Confirmed)
-            .GroupBy(b => b.Date)
-            .Select(g => new { Date = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.Date, x => x.Count);
+        var confirmedTeamCounts = new Dictionary<DateOnly, int>();
+        for (var d = request.From; d <= request.To; d = d.AddDays(1))
+            confirmedTeamCounts[d] = _writeThroughCache.GetConfirmedCountByTeamAndDate(reportee.TeamId, d);
 
         var results = new List<RangeBookingResult>();
         var newBookings = new List<Booking>();
@@ -250,7 +240,8 @@ public class BookingsController : ControllerBase
         {
             _db.Bookings.AddRange(newBookings);
             await _db.SaveChangesAsync();
-            await _cache.EvictByTagAsync("availability", default);
+            await _cache.EvictByTagAsync($"team-{reportee.TeamId}", default);
+            await _cache.EvictByTagAsync("seats-overview", default);
         }
 
         // Build results for created bookings
@@ -298,29 +289,27 @@ public class BookingsController : ControllerBase
         if (authType != "reportee" || authId != request.ReporteeId)
             return Forbid();
 
-        var reportee = await _db.Reportees.FindAsync(request.ReporteeId);
+        var reportee = _writeThroughCache.GetReportee(request.ReporteeId);
         if (reportee == null) return NotFound(new { error = "Reportee not found" });
         if (!reportee.IsApproved) return BadRequest(new { error = "Reportee not approved by manager yet" });
 
-        var seat = await _db.Seats.FindAsync(request.SeatId);
+        var seat = _writeThroughCache.GetSeat(request.SeatId);
         if (seat == null) return NotFound(new { error = "Seat not found" });
         if (seat.TeamId != reportee.TeamId)
             return BadRequest(new { error = "Seat does not belong to your team" });
 
         // Check if reportee already has a booking for this date
-        var existing = await _db.Bookings.FirstOrDefaultAsync(b =>
-            b.ReporteeId == request.ReporteeId && b.Date == request.Date);
+        var existing = _writeThroughCache.GetReporteeBookingOnDate(request.ReporteeId, request.Date);
         if (existing != null)
             return Conflict(new { error = "You already have a booking for this date", status = existing.Status.ToString() });
 
         // Check if seat is available (no confirmed booking)
-        var seatTaken = await _db.Bookings.AnyAsync(b =>
-            b.SeatId == request.SeatId && b.Date == request.Date && b.Status == BookingStatus.Confirmed);
+        var dayBookings = _writeThroughCache.GetBookingsByTeamAndDate(reportee.TeamId, request.Date);
+        var seatTaken = dayBookings.Any(b => b.SeatId == request.SeatId && b.Status == BookingStatus.Confirmed);
 
         // Check if ALL seats in the team are taken for this date
-        var totalSeats = await _db.Seats.CountAsync(s => s.TeamId == reportee.TeamId);
-        var confirmedCount = await _db.Bookings.CountAsync(b =>
-            b.TeamId == reportee.TeamId && b.Date == request.Date && b.Status == BookingStatus.Confirmed);
+        var totalSeats = _writeThroughCache.GetSeatCount(reportee.TeamId);
+        var confirmedCount = dayBookings.Count(b => b.Status == BookingStatus.Confirmed);
 
         BookingStatus status;
         if (!seatTaken)
@@ -351,7 +340,8 @@ public class BookingsController : ControllerBase
         _db.Bookings.Add(booking);
         await _db.SaveChangesAsync();
 
-        await _cache.EvictByTagAsync("availability", default);
+        await _cache.EvictByTagAsync($"team-{reportee.TeamId}", default);
+        await _cache.EvictByTagAsync("seats-overview", default);
 
         return CreatedAtAction(nameof(Availability), new { teamId = reportee.TeamId, date = request.Date },
             new BookingResponse(booking.Id, booking.Date, booking.SeatId,
@@ -376,12 +366,13 @@ public class BookingsController : ControllerBase
     [TotpAuth]
     public async Task<ActionResult> Cancel(int id)
     {
-        var booking = await _db.Bookings
-            .Include(b => b.Seat)
-            .Include(b => b.Reportee)
-            .FirstOrDefaultAsync(b => b.Id == id);
-
-        if (booking == null) return NotFound(new { error = "Booking not found" });
+        var booking = _writeThroughCache.GetBooking(id);
+        if (booking == null)
+        {
+            // Fallback to DB for pruned bookings
+            booking = await _db.Bookings.FindAsync(id);
+            if (booking == null) return NotFound(new { error = "Booking not found" });
+        }
 
         // Verify auth matches the reportee
         var authId = (int)HttpContext.Items["TotpEntityId"]!;
@@ -394,10 +385,16 @@ public class BookingsController : ControllerBase
         var teamId = booking.TeamId;
         var date = booking.Date;
 
-        _db.Bookings.Remove(booking);
-        await _db.SaveChangesAsync();
+        // Remove from DB
+        var dbBooking = await _db.Bookings.FindAsync(id);
+        if (dbBooking != null)
+        {
+            _db.Bookings.Remove(dbBooking);
+            await _db.SaveChangesAsync();
+        }
 
-        await _cache.EvictByTagAsync("availability", default);
+        await _cache.EvictByTagAsync($"team-{teamId}", default);
+        await _cache.EvictByTagAsync("seats-overview", default);
 
         // If a confirmed booking was cancelled, promote from waitlist
         if (wasConfirmed)

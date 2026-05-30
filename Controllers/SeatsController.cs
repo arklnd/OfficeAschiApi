@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
+using OfficeAschiApi.Caching;
 using OfficeAschiApi.Data;
 using OfficeAschiApi.DTOs;
 using OfficeAschiApi.Middleware;
@@ -14,11 +15,13 @@ public class SeatsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IOutputCacheStore _cache;
+    private readonly WriteThroughCache _writeThroughCache;
 
-    public SeatsController(AppDbContext db, IOutputCacheStore cache)
+    public SeatsController(AppDbContext db, IOutputCacheStore cache, WriteThroughCache writeThroughCache)
     {
         _db = db;
         _cache = cache;
+        _writeThroughCache = writeThroughCache;
     }
 
     /// <summary>
@@ -28,18 +31,17 @@ public class SeatsController : ControllerBase
     /// <response code="200">Returns the list of seats in the team.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet]
-    [OutputCache(PolicyName = "StaticData", Tags = new[] { "seats" })]
+    [OutputCache(PolicyName = "TeamScoped")]
     [ProducesResponseType(typeof(List<SeatResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<ActionResult<List<SeatResponse>>> List(int teamId)
+    public ActionResult<List<SeatResponse>> List(int teamId)
     {
-        if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
+        if (!_writeThroughCache.TeamExists(teamId))
             return NotFound(new { error = "Team not found" });
 
-        var seats = await _db.Seats
-            .Where(s => s.TeamId == teamId)
+        var seats = _writeThroughCache.GetSeatsByTeam(teamId)
             .Select(s => new SeatResponse(s.Id, s.Label, s.TeamId))
-            .ToListAsync();
+            .ToList();
 
         return Ok(seats);
     }
@@ -69,7 +71,7 @@ public class SeatsController : ControllerBase
         if (authType != "manager" || authId != teamId)
             return Forbid();
 
-        if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
+        if (!_writeThroughCache.TeamExists(teamId))
             return NotFound(new { error = "Team not found" });
 
         if (string.IsNullOrWhiteSpace(request.Label))
@@ -79,18 +81,17 @@ public class SeatsController : ControllerBase
         _db.Seats.Add(seat);
         await _db.SaveChangesAsync();
 
-        await EvictSeatCaches();
+        await EvictSeatOutputCache(teamId);
 
         return CreatedAtAction(nameof(List), new { teamId },
             new SeatResponse(seat.Id, seat.Label, seat.TeamId));
     }
 
-    // Post-mutation cache eviction helper
-    private async Task EvictSeatCaches()
+    private async Task EvictSeatOutputCache(int teamId)
     {
-        await _cache.EvictByTagAsync("seats", default);
-        await _cache.EvictByTagAsync("static", default);
-        await _cache.EvictByTagAsync("availability", default);
+        await _cache.EvictByTagAsync($"team-{teamId}", default);
+        await _cache.EvictByTagAsync("teams-list", default);
+        await _cache.EvictByTagAsync("seats-overview", default);
     }
 
     /// <summary>
@@ -129,7 +130,7 @@ public class SeatsController : ControllerBase
         _db.Seats.Remove(seat);
         await _db.SaveChangesAsync();
 
-        await EvictSeatCaches();
+        await EvictSeatOutputCache(teamId);
 
         return Ok(new { message = "Seat deleted" });
     }
@@ -142,39 +143,37 @@ public class SeatsController : ControllerBase
     [HttpGet("/api/Seats")]
     [OutputCache(PolicyName = "SeatOverview")]
     [ProducesResponseType(typeof(List<SeatOverviewResponse>), StatusCodes.Status200OK)]
-    public async Task<ActionResult<List<SeatOverviewResponse>>> GetAll([FromQuery] DateOnly? date)
+    public ActionResult<List<SeatOverviewResponse>> GetAll([FromQuery] DateOnly? date)
     {
         var targetDate = date ?? DateOnly.FromDateTime(DateTime.UtcNow);
 
-        var seats = await _db.Seats
-            .OrderBy(s => s.Team.Name)
-            .ThenBy(s => s.Label)
-            .Select(s => new
+        var result = _writeThroughCache.GetAllSeats()
+            .Select(s =>
             {
-                s.Id,
-                s.Label,
-                s.TeamId,
-                TeamName = s.Team.Name,
-                ConfirmedBooking = s.Bookings
-                    .Where(b => b.Date == targetDate && b.Status == BookingStatus.Confirmed)
-                    .Select(b => new SeatOverviewBooking(
-                        b.ReporteeId,
-                        b.Reportee.FriendlyName,
-                        b.Id,
-                        b.Status.ToString(),
-                        b.CreatedAt))
-                    .FirstOrDefault()
-            })
-            .ToListAsync();
+                var team = _writeThroughCache.GetTeam(s.TeamId);
+                var confirmedBooking = _writeThroughCache.GetBookingsByTeamAndDate(s.TeamId, targetDate)
+                    .Where(b => b.SeatId == s.Id && b.Status == BookingStatus.Confirmed)
+                    .Select(b =>
+                    {
+                        var reportee = _writeThroughCache.GetReportee(b.ReporteeId);
+                        return new SeatOverviewBooking(
+                            b.ReporteeId,
+                            reportee?.FriendlyName ?? "",
+                            b.Id,
+                            b.Status.ToString(),
+                            b.CreatedAt);
+                    })
+                    .FirstOrDefault();
 
-        var result = seats.Select(s => new SeatOverviewResponse(
-            s.Id,
-            s.Label,
-            s.TeamId,
-            s.TeamName,
-            s.ConfirmedBooking != null,
-            s.ConfirmedBooking
-        )).ToList();
+                return new SeatOverviewResponse(
+                    s.Id, s.Label, s.TeamId,
+                    team?.Name ?? "",
+                    confirmedBooking != null,
+                    confirmedBooking);
+            })
+            .OrderBy(s => s.TeamName)
+            .ThenBy(s => s.Label)
+            .ToList();
 
         return Ok(result);
     }

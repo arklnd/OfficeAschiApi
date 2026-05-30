@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using ModelContextProtocol.AspNetCore;
+using OfficeAschiApi.Caching;
 using OfficeAschiApi.Data;
 using OfficeAschiApi.McpBridge;
 using OfficeAschiApi.Middleware;
@@ -15,24 +16,28 @@ builder.Services.AddControllers()
 // Output Caching — server-side response cache with tag-based eviction
 builder.Services.AddOutputCache(options =>
 {
-    // Static reference data: teams, seats, reportees (changes infrequently)
-    options.AddPolicy("StaticData", b => b
+    // Team search list (no team-scoped tag — global list)
+    options.AddPolicy("TeamsList", b => b
         .Expire(TimeSpan.FromMinutes(2))
         .SetVaryByQuery("q")
-        .Tag("static"));
+        .Tag("teams-list"));
 
-    // Availability data: changes as bookings are made (short TTL)
+    // Per-team static data: team detail, seats, reportees (scoped by team-{id})
+    options.AddPolicy("TeamScoped", b => b
+        .Expire(TimeSpan.FromMinutes(2))
+        .AddPolicy<TeamScopedTagPolicy>());
+
+    // Per-team availability data (short TTL, scoped by team-{id})
     options.AddPolicy("Availability", b => b
         .Expire(TimeSpan.FromSeconds(30))
         .SetVaryByQuery("date", "from", "to")
-        .Tag("availability"));
+        .AddPolicy<TeamScopedTagPolicy>());
 
-    // Seat overview: all seats across teams for a date
+    // Seat overview: all seats across teams for a date (global)
     options.AddPolicy("SeatOverview", b => b
         .Expire(TimeSpan.FromSeconds(30))
         .SetVaryByQuery("date")
-        .Tag("availability")
-        .Tag("static"));
+        .Tag("seats-overview"));
 });
 
 // Swagger / OpenAPI
@@ -60,18 +65,20 @@ builder.Services.AddSwaggerGen(c =>
 var dbType = builder.Configuration["DB_TYPE"] ?? "SQLITE";
 if (dbType.Equals("AZURE_SQL", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddDbContext<AppDbContext>(opt =>
+    builder.Services.AddDbContext<AppDbContext>((sp, opt) =>
         opt.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection"),
             sqlOptions => sqlOptions.EnableRetryOnFailure(
                 maxRetryCount: 6,
                 maxRetryDelay: TimeSpan.FromSeconds(30),
-                errorNumbersToAdd: null)));
+                errorNumbersToAdd: null))
+        .AddInterceptors(sp.GetRequiredService<WriteThroughInterceptor>()));
     builder.Services.AddHostedService<DbKeepAliveService>();
 }
 else
 {
-    builder.Services.AddDbContext<AppDbContext>(opt =>
-        opt.UseSqlite("Data Source=officeaschi.db"));
+    builder.Services.AddDbContext<AppDbContext>((sp, opt) =>
+        opt.UseSqlite("Data Source=officeaschi.db")
+        .AddInterceptors(sp.GetRequiredService<WriteThroughInterceptor>()));
 }
 
 // CORS — allow any origin
@@ -86,6 +93,11 @@ builder.Services.AddCors(options =>
 // App services
 builder.Services.AddSingleton<TotpService>();
 builder.Services.AddScoped<WaitlistService>();
+
+// Write-through in-memory cache — mirrors DB, serves all reads from RAM
+builder.Services.AddSingleton<WriteThroughCache>();
+builder.Services.AddSingleton<WriteThroughInterceptor>();
+builder.Services.AddHostedService<CacheWarmupService>();
 
 // MCP server — auto-discover tools from API controllers
 builder.Services.AddToolsFromControllers();
