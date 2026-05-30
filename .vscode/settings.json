@@ -1,0 +1,7 @@
+{
+    "chat.mcp.serverSampling": {
+        "OfficeAschiApi/.vscode/mcp.json: com.microsoft/azure": {
+            "allowedDuringChat": true
+        }
+    }
+}
