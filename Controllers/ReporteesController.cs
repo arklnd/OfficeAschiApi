@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using OfficeAschiApi.Data;
 using OfficeAschiApi.DTOs;
@@ -15,12 +16,14 @@ public class ReporteesController : ControllerBase
     private readonly AppDbContext _db;
     private readonly TotpService _totpService;
     private readonly WaitlistService _waitlistService;
+    private readonly IOutputCacheStore _cache;
 
-    public ReporteesController(AppDbContext db, TotpService totpService, WaitlistService waitlistService)
+    public ReporteesController(AppDbContext db, TotpService totpService, WaitlistService waitlistService, IOutputCacheStore cache)
     {
         _db = db;
         _totpService = totpService;
         _waitlistService = waitlistService;
+        _cache = cache;
     }
 
     /// <summary>
@@ -30,6 +33,7 @@ public class ReporteesController : ControllerBase
     /// <response code="200">Returns the list of reportees in the team.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet]
+    [OutputCache(PolicyName = "StaticData", Tags = new[] { "reportees" })]
     [ProducesResponseType(typeof(List<ReporteeResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<List<ReporteeResponse>>> List(int teamId)
@@ -56,6 +60,7 @@ public class ReporteesController : ControllerBase
     /// <response code="404">Team not found.</response>
     /// <response code="409">Friendly name already taken in this team.</response>
     [HttpPost]
+    [OutputCache(NoStore = true)]
     [ProducesResponseType(typeof(ReporteeResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -89,6 +94,8 @@ public class ReporteesController : ControllerBase
         _db.Reportees.Add(reportee);
         await _db.SaveChangesAsync();
 
+        await EvictReporteeCaches();
+
         return CreatedAtAction(nameof(List), new { teamId },
             new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, false, true));
     }
@@ -104,6 +111,7 @@ public class ReporteesController : ControllerBase
     /// <response code="403">TOTP auth does not match the team manager.</response>
     /// <response code="404">Reportee not found in this team.</response>
     [HttpPut("{reporteeId}/approve")]
+    [OutputCache(NoStore = true)]
     [ProducesResponseType(typeof(ReporteeResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -125,6 +133,8 @@ public class ReporteesController : ControllerBase
         reportee.IsApproved = true;
         await _db.SaveChangesAsync();
 
+        await EvictReporteeCaches();
+
         return Ok(new ReporteeResponse(reportee.Id, reportee.FriendlyName, reportee.TeamId, true, reportee.TotpSecret != null));
     }
 
@@ -140,6 +150,7 @@ public class ReporteesController : ControllerBase
     /// <response code="403">TOTP auth does not match the team manager.</response>
     /// <response code="404">Reportee not found in this team.</response>
     [HttpDelete("{reporteeId}/deny")]
+    [OutputCache(NoStore = true)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -165,6 +176,8 @@ public class ReporteesController : ControllerBase
         _db.Reportees.Remove(reportee);
         await _db.SaveChangesAsync();
 
+        await EvictReporteeCaches();
+
         return Ok(new { message = "Join request denied", reportee = reportee.FriendlyName });
     }
 
@@ -179,6 +192,7 @@ public class ReporteesController : ControllerBase
     /// <response code="403">TOTP auth does not match the team manager.</response>
     /// <response code="404">Reportee not found in this team.</response>
     [HttpDelete("{reporteeId}")]
+    [OutputCache(NoStore = true)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -211,6 +225,9 @@ public class ReporteesController : ControllerBase
         _db.Reportees.Remove(reportee);
         await _db.SaveChangesAsync();
 
+        await EvictReporteeCaches();
+        await _cache.EvictByTagAsync("availability", default);
+
         return Ok(new
         {
             message = "Member removed",
@@ -219,5 +236,11 @@ public class ReporteesController : ControllerBase
             seatsVacated = confirmedBookings.Count,
             waitlistPromotions = confirmedBookings.Count
         });
+    }
+
+    private async Task EvictReporteeCaches()
+    {
+        await _cache.EvictByTagAsync("reportees", default);
+        await _cache.EvictByTagAsync("static", default);
     }
 }

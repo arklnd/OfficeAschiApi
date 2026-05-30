@@ -12,6 +12,29 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
+// Output Caching — server-side response cache with tag-based eviction
+builder.Services.AddOutputCache(options =>
+{
+    // Static reference data: teams, seats, reportees (changes infrequently)
+    options.AddPolicy("StaticData", b => b
+        .Expire(TimeSpan.FromMinutes(2))
+        .SetVaryByQuery("q")
+        .Tag("static"));
+
+    // Availability data: changes as bookings are made (short TTL)
+    options.AddPolicy("Availability", b => b
+        .Expire(TimeSpan.FromSeconds(30))
+        .SetVaryByQuery("date", "from", "to")
+        .Tag("availability"));
+
+    // Seat overview: all seats across teams for a date
+    options.AddPolicy("SeatOverview", b => b
+        .Expire(TimeSpan.FromSeconds(30))
+        .SetVaryByQuery("date")
+        .Tag("availability")
+        .Tag("static"));
+});
+
 // Swagger / OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -98,6 +121,9 @@ app.UseStaticFiles();
 
 // CORS
 app.UseCors();
+
+// Output caching (after CORS, before controllers)
+app.UseOutputCache();
 
 // TOTP auth middleware (before controllers, after routing)
 app.UseMiddleware<TotpAuthMiddleware>();

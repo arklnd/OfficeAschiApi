@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using OfficeAschiApi.Data;
 using OfficeAschiApi.DTOs;
@@ -14,11 +15,13 @@ public class TeamsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly TotpService _totpService;
+    private readonly IOutputCacheStore _cache;
 
-    public TeamsController(AppDbContext db, TotpService totpService)
+    public TeamsController(AppDbContext db, TotpService totpService, IOutputCacheStore cache)
     {
         _db = db;
         _totpService = totpService;
+        _cache = cache;
     }
 
     /// <summary>
@@ -27,6 +30,7 @@ public class TeamsController : ControllerBase
     /// <param name="q">Optional search query to filter teams by name.</param>
     /// <response code="200">Returns matching teams with seat and member counts.</response>
     [HttpGet]
+    [OutputCache(PolicyName = "StaticData", Tags = new[] { "teams" })]
     [ProducesResponseType(typeof(List<TeamSearchResult>), StatusCodes.Status200OK)]
     public async Task<ActionResult<List<TeamSearchResult>>> Search([FromQuery] string? q)
     {
@@ -52,6 +56,7 @@ public class TeamsController : ControllerBase
     /// <response code="200">Returns team details.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet("{id}")]
+    [OutputCache(PolicyName = "StaticData", Tags = new[] { "teams" })]
     [ProducesResponseType(typeof(TeamResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<TeamResponse>> GetById(int id)
@@ -70,6 +75,7 @@ public class TeamsController : ControllerBase
     /// <response code="400">Missing secret key / TOTP code, or invalid TOTP code.</response>
     /// <response code="409">Team name already taken.</response>
     [HttpPost]
+    [OutputCache(NoStore = true)]
     [ProducesResponseType(typeof(TeamResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
@@ -100,6 +106,9 @@ public class TeamsController : ControllerBase
             await _db.SaveChangesAsync();
         }
 
+        await _cache.EvictByTagAsync("teams", default);
+        await _cache.EvictByTagAsync("static", default);
+
         return CreatedAtAction(nameof(GetById), new { id = team.Id },
             new TeamResponse(team.Id, team.Name, true));
     }
@@ -113,6 +122,7 @@ public class TeamsController : ControllerBase
     /// <response code="403">TOTP auth does not match the team manager.</response>
     /// <response code="404">Team not found.</response>
     [HttpDelete("{id}")]
+    [OutputCache(NoStore = true)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -143,6 +153,11 @@ public class TeamsController : ControllerBase
         _db.Teams.Remove(team);
 
         await _db.SaveChangesAsync();
+
+        // Evict all related caches — team deletion affects everything
+        await _cache.EvictByTagAsync("teams", default);
+        await _cache.EvictByTagAsync("static", default);
+        await _cache.EvictByTagAsync("availability", default);
 
         return Ok(new { message = "Team deleted", bookingsRemoved = bookings.Count, membersRemoved = reportees.Count, seatsRemoved = seats.Count });
     }
