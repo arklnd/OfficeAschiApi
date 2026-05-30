@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using OfficeAschiApi.Caching;
 using OfficeAschiApi.Data;
@@ -14,13 +13,11 @@ namespace OfficeAschiApi.Controllers;
 public class SeatsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly IOutputCacheStore _cache;
     private readonly WriteThroughCache _writeThroughCache;
 
-    public SeatsController(AppDbContext db, IOutputCacheStore cache, WriteThroughCache writeThroughCache)
+    public SeatsController(AppDbContext db, WriteThroughCache writeThroughCache)
     {
         _db = db;
-        _cache = cache;
         _writeThroughCache = writeThroughCache;
     }
 
@@ -31,7 +28,6 @@ public class SeatsController : ControllerBase
     /// <response code="200">Returns the list of seats in the team.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet]
-    [OutputCache(PolicyName = "TeamScoped")]
     [ProducesResponseType(typeof(List<SeatResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<List<SeatResponse>> List(int teamId)
@@ -57,7 +53,6 @@ public class SeatsController : ControllerBase
     /// <response code="403">TOTP auth does not match the team manager.</response>
     /// <response code="404">Team not found.</response>
     [HttpPost]
-    [OutputCache(NoStore = true)]
     [ProducesResponseType(typeof(SeatResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -81,17 +76,8 @@ public class SeatsController : ControllerBase
         _db.Seats.Add(seat);
         await _db.SaveChangesAsync();
 
-        await EvictSeatOutputCache(teamId);
-
         return CreatedAtAction(nameof(List), new { teamId },
             new SeatResponse(seat.Id, seat.Label, seat.TeamId));
-    }
-
-    private async Task EvictSeatOutputCache(int teamId)
-    {
-        await _cache.EvictByTagAsync($"team-{teamId}", default);
-        await _cache.EvictByTagAsync("teams-list", default);
-        await _cache.EvictByTagAsync("seats-overview", default);
     }
 
     /// <summary>
@@ -106,7 +92,6 @@ public class SeatsController : ControllerBase
     /// <response code="403">TOTP auth does not match the team manager.</response>
     /// <response code="404">Seat not found in this team.</response>
     [HttpDelete("{seatId}")]
-    [OutputCache(NoStore = true)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -130,8 +115,6 @@ public class SeatsController : ControllerBase
         _db.Seats.Remove(seat);
         await _db.SaveChangesAsync();
 
-        await EvictSeatOutputCache(teamId);
-
         return Ok(new { message = "Seat deleted" });
     }
 
@@ -141,7 +124,6 @@ public class SeatsController : ControllerBase
     /// <param name="date">The date to check (defaults to today).</param>
     /// <response code="200">Returns all seats with their occupancy status.</response>
     [HttpGet("/api/Seats")]
-    [OutputCache(PolicyName = "SeatOverview")]
     [ProducesResponseType(typeof(List<SeatOverviewResponse>), StatusCodes.Status200OK)]
     public ActionResult<List<SeatOverviewResponse>> GetAll([FromQuery] DateOnly? date)
     {

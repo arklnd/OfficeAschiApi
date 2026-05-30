@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.EntityFrameworkCore;
 using OfficeAschiApi.Caching;
 using OfficeAschiApi.Data;
@@ -16,15 +15,13 @@ public class BookingsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly WaitlistService _waitlistService;
-    private readonly IOutputCacheStore _cache;
     private readonly WriteThroughCache _writeThroughCache;
 
     public BookingsController(AppDbContext db, WaitlistService waitlistService,
-        IOutputCacheStore cache, WriteThroughCache writeThroughCache)
+        WriteThroughCache writeThroughCache)
     {
         _db = db;
         _waitlistService = waitlistService;
-        _cache = cache;
         _writeThroughCache = writeThroughCache;
     }
 
@@ -36,7 +33,6 @@ public class BookingsController : ControllerBase
     /// <response code="200">Returns seat availability, confirmed bookings, and waitlist info.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet("availability/{teamId}")]
-    [OutputCache(PolicyName = "Availability")]
     [ProducesResponseType(typeof(AvailabilityResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public ActionResult<AvailabilityResponse> Availability(int teamId, [FromQuery] DateOnly date)
@@ -100,7 +96,6 @@ public class BookingsController : ControllerBase
     /// <response code="400">Invalid date range.</response>
     /// <response code="404">Team not found.</response>
     [HttpGet("availability/{teamId}/range")]
-    [OutputCache(PolicyName = "Availability")]
     [ProducesResponseType(typeof(RangeAvailabilityResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -140,7 +135,6 @@ public class BookingsController : ControllerBase
     /// <response code="403">TOTP auth does not match the reportee.</response>
     /// <response code="404">Reportee or seat not found.</response>
     [HttpPost("range")]
-    [OutputCache(NoStore = true)]
     [ProducesResponseType(typeof(RangeBookingResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -240,8 +234,6 @@ public class BookingsController : ControllerBase
         {
             _db.Bookings.AddRange(newBookings);
             await _db.SaveChangesAsync();
-            await _cache.EvictByTagAsync($"team-{reportee.TeamId}", default);
-            await _cache.EvictByTagAsync("seats-overview", default);
         }
 
         // Build results for created bookings
@@ -274,7 +266,6 @@ public class BookingsController : ControllerBase
     /// <response code="404">Reportee or seat not found.</response>
     /// <response code="409">Reportee already has a booking for this date.</response>
     [HttpPost]
-    [OutputCache(NoStore = true)]
     [ProducesResponseType(typeof(BookingResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
@@ -340,9 +331,6 @@ public class BookingsController : ControllerBase
         _db.Bookings.Add(booking);
         await _db.SaveChangesAsync();
 
-        await _cache.EvictByTagAsync($"team-{reportee.TeamId}", default);
-        await _cache.EvictByTagAsync("seats-overview", default);
-
         return CreatedAtAction(nameof(Availability), new { teamId = reportee.TeamId, date = request.Date },
             new BookingResponse(booking.Id, booking.Date, booking.SeatId,
                 seat.Label, booking.ReporteeId, reportee.FriendlyName,
@@ -359,7 +347,6 @@ public class BookingsController : ControllerBase
     /// <response code="403">TOTP auth does not match the booking's reportee.</response>
     /// <response code="404">Booking not found.</response>
     [HttpDelete("{id}")]
-    [OutputCache(NoStore = true)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
@@ -392,9 +379,6 @@ public class BookingsController : ControllerBase
             _db.Bookings.Remove(dbBooking);
             await _db.SaveChangesAsync();
         }
-
-        await _cache.EvictByTagAsync($"team-{teamId}", default);
-        await _cache.EvictByTagAsync("seats-overview", default);
 
         // If a confirmed booking was cancelled, promote from waitlist
         if (wasConfirmed)

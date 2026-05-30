@@ -13,33 +13,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
-// Output Caching — server-side response cache with tag-based eviction
-builder.Services.AddOutputCache(options =>
-{
-    // Team search list (no team-scoped tag — global list)
-    options.AddPolicy("TeamsList", b => b
-        .Expire(TimeSpan.FromMinutes(2))
-        .SetVaryByQuery("q")
-        .Tag("teams-list"));
-
-    // Per-team static data: team detail, seats, reportees (scoped by team-{id})
-    options.AddPolicy("TeamScoped", b => b
-        .Expire(TimeSpan.FromMinutes(2))
-        .AddPolicy<TeamScopedTagPolicy>());
-
-    // Per-team availability data (short TTL, scoped by team-{id})
-    options.AddPolicy("Availability", b => b
-        .Expire(TimeSpan.FromSeconds(30))
-        .SetVaryByQuery("date", "from", "to")
-        .AddPolicy<TeamScopedTagPolicy>());
-
-    // Seat overview: all seats across teams for a date (global)
-    options.AddPolicy("SeatOverview", b => b
-        .Expire(TimeSpan.FromSeconds(30))
-        .SetVaryByQuery("date")
-        .Tag("seats-overview"));
-});
-
 // Swagger / OpenAPI
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -133,9 +106,6 @@ app.UseStaticFiles();
 
 // CORS
 app.UseCors();
-
-// Output caching (after CORS, before controllers)
-app.UseOutputCache();
 
 // TOTP auth middleware (before controllers, after routing)
 app.UseMiddleware<TotpAuthMiddleware>();
