@@ -41,11 +41,18 @@ public record DateAvailabilitySummary(
     int AvailableCount,
     int WaitlistedCount);
 
+public record DateAvailabilityExtra(
+    DateOnly Date,
+    List<BookingResponse> Bookings,
+    List<SeatResponse> AvailableSeats,
+    List<WaitlistInfo> Waitlist);
+
 public record RangeAvailabilityResponse(
     int TeamId,
     DateOnly From,
     DateOnly To,
-    List<DateAvailabilitySummary> Days);
+    List<DateAvailabilitySummary> Days,
+    List<DateAvailabilityExtra>? DetailedDays = null);
 
 // --- Date-range booking ---
 public record BookSeatRangeRequest(int ReporteeId, int SeatId, DateOnly From, DateOnly To, bool SkipWeekends = true);

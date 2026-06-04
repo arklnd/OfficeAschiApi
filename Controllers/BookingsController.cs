@@ -80,6 +80,7 @@ public class BookingsController : ControllerBase
     /// <param name="teamId">The ID of the team to check availability for.</param>
     /// <param name="from">Start date (inclusive).</param>
     /// <param name="to">End date (inclusive). Max 90 days from start.</param>
+    /// <param name="fullDetails">When true, includes per-day bookings, available seats, and waitlist details.</param>
     /// <response code="200">Returns per-day availability summary for the date range.</response>
     /// <response code="400">Invalid date range.</response>
     /// <response code="404">Team not found.</response>
@@ -88,7 +89,8 @@ public class BookingsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<ActionResult<RangeAvailabilityResponse>> AvailabilityRange(
-        int teamId, [FromQuery] DateOnly from, [FromQuery] DateOnly to)
+        int teamId, [FromQuery] DateOnly from, [FromQuery] DateOnly to,
+        [FromQuery] bool fullDetails = false)
     {
         if (to < from)
             return BadRequest(new { error = "to must be >= from" });
@@ -98,36 +100,94 @@ public class BookingsController : ControllerBase
         if (!await _db.Teams.AnyAsync(t => t.Id == teamId))
             return NotFound(new { error = "Team not found" });
 
-        var totalSeats = await _db.Seats.CountAsync(s => s.TeamId == teamId);
+        var allSeats = await _db.Seats.Where(s => s.TeamId == teamId).ToListAsync();
+        var totalSeats = allSeats.Count;
 
-        var bookings = await _db.Bookings
-            .Where(b => b.TeamId == teamId && b.Date >= from && b.Date <= to)
-            .GroupBy(b => b.Date)
-            .Select(g => new
+        if (!fullDetails)
+        {
+            var bookings = await _db.Bookings
+                .Where(b => b.TeamId == teamId && b.Date >= from && b.Date <= to)
+                .GroupBy(b => b.Date)
+                .Select(g => new
+                {
+                    Date = g.Key,
+                    Confirmed = g.Count(b => b.Status == BookingStatus.Confirmed),
+                    Waitlisted = g.Count(b => b.Status == BookingStatus.Waitlisted)
+                })
+                .ToListAsync();
+
+            var bookingsByDate = bookings.ToDictionary(b => b.Date);
+
+            var days = new List<DateAvailabilitySummary>();
+            for (var d = from; d <= to; d = d.AddDays(1))
             {
-                Date = g.Key,
-                Confirmed = g.Count(b => b.Status == BookingStatus.Confirmed),
-                Waitlisted = g.Count(b => b.Status == BookingStatus.Waitlisted)
-            })
+                if (bookingsByDate.TryGetValue(d, out var b))
+                {
+                    days.Add(new DateAvailabilitySummary(d, totalSeats, b.Confirmed,
+                        totalSeats - b.Confirmed, b.Waitlisted));
+                }
+                else
+                {
+                    days.Add(new DateAvailabilitySummary(d, totalSeats, 0, totalSeats, 0));
+                }
+            }
+
+            return Ok(new RangeAvailabilityResponse(teamId, from, to, days));
+        }
+
+        // Full details path — fetch all bookings with related data
+        var allBookings = await _db.Bookings
+            .Include(b => b.Seat)
+            .Include(b => b.Reportee)
+            .Where(b => b.TeamId == teamId && b.Date >= from && b.Date <= to)
+            .OrderBy(b => b.CreatedAt)
             .ToListAsync();
 
-        var bookingsByDate = bookings.ToDictionary(b => b.Date);
+        var groupedByDate = allBookings.GroupBy(b => b.Date).ToDictionary(g => g.Key, g => g.ToList());
 
-        var days = new List<DateAvailabilitySummary>();
+        var summaryDays = new List<DateAvailabilitySummary>();
+        var detailedDays = new List<DateAvailabilityExtra>();
+
         for (var d = from; d <= to; d = d.AddDays(1))
         {
-            if (bookingsByDate.TryGetValue(d, out var b))
+            if (groupedByDate.TryGetValue(d, out var dayBookings))
             {
-                days.Add(new DateAvailabilitySummary(d, totalSeats, b.Confirmed,
-                    totalSeats - b.Confirmed, b.Waitlisted));
+                var confirmed = dayBookings.Where(b => b.Status == BookingStatus.Confirmed).ToList();
+                var waitlisted = dayBookings.Where(b => b.Status == BookingStatus.Waitlisted).ToList();
+                var bookedSeatIds = confirmed.Select(b => b.SeatId).ToHashSet();
+
+                var availableSeats = allSeats
+                    .Where(s => !bookedSeatIds.Contains(s.Id))
+                    .Select(s => new SeatResponse(s.Id, s.Label, s.TeamId))
+                    .ToList();
+
+                var bookingResponses = confirmed.Select(b => new BookingResponse(
+                    b.Id, b.Date, b.SeatId, b.Seat.Label, b.ReporteeId,
+                    b.Reportee.FriendlyName, "Confirmed",
+                    DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc))).ToList();
+
+                var waitlistInfos = waitlisted.Select(b => new WaitlistInfo(
+                    b.Id, b.Reportee.FriendlyName, b.Seat.Label,
+                    DateTime.SpecifyKind(b.CreatedAt, DateTimeKind.Utc))).ToList();
+
+                summaryDays.Add(new DateAvailabilitySummary(d, totalSeats, confirmed.Count,
+                    availableSeats.Count, waitlisted.Count));
+
+                detailedDays.Add(new DateAvailabilityExtra(d,
+                    bookingResponses, availableSeats, waitlistInfos));
             }
             else
             {
-                days.Add(new DateAvailabilitySummary(d, totalSeats, 0, totalSeats, 0));
+                var allAvailable = allSeats
+                    .Select(s => new SeatResponse(s.Id, s.Label, s.TeamId)).ToList();
+
+                summaryDays.Add(new DateAvailabilitySummary(d, totalSeats, 0, totalSeats, 0));
+                detailedDays.Add(new DateAvailabilityExtra(d,
+                    new List<BookingResponse>(), allAvailable, new List<WaitlistInfo>()));
             }
         }
 
-        return Ok(new RangeAvailabilityResponse(teamId, from, to, days));
+        return Ok(new RangeAvailabilityResponse(teamId, from, to, summaryDays, detailedDays));
     }
 
     /// <summary>
