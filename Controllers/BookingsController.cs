@@ -193,6 +193,17 @@ public class BookingsController : ControllerBase
 
         for (var d = request.From; d <= request.To; d = d.AddDays(1))
         {
+            if (request.SkipWeekends)
+            {
+                var dow = d.DayOfWeek;
+                if (dow == DayOfWeek.Saturday || dow == DayOfWeek.Sunday)
+                {
+                    results.Add(new RangeBookingResult(d, false, "Skipped", null,
+                        $"{d:yyyy-MM-dd} is a {dow} — weekends are skipped"));
+                    continue;
+                }
+            }
+
             if (existingReporteeBookings.Contains(d))
             {
                 results.Add(new RangeBookingResult(d, false, "Skipped", null,

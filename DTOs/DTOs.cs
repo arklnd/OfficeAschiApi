@@ -48,7 +48,7 @@ public record RangeAvailabilityResponse(
     List<DateAvailabilitySummary> Days);
 
 // --- Date-range booking ---
-public record BookSeatRangeRequest(int ReporteeId, int SeatId, DateOnly From, DateOnly To);
+public record BookSeatRangeRequest(int ReporteeId, int SeatId, DateOnly From, DateOnly To, bool SkipWeekends = true);
 
 public record RangeBookingResult(
     DateOnly Date,
